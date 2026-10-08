@@ -18,6 +18,8 @@ private:
     
 public:
     MaxHeap();
+    ~MaxHeap() {} // Vector handles memory
+
     
     void insert(LogRecord* record);
     LogRecord* extractMax();
@@ -25,6 +27,7 @@ public:
     int size() const;
     
     // Retrieve top K logs
+    // Retrieve top K logs without destroying the heap
     std::vector<LogRecord*> getTopK(int k);
     
     int getNodesAccessed() const;

@@ -16,6 +16,7 @@ struct TrieNode {
     std::vector<LogRecord*> logs;
 
     TrieNode();
+    ~TrieNode();
 };
 
 class Trie {
@@ -27,6 +28,7 @@ private:
 
 public:
     Trie();
+    ~Trie();
     
     // Insert a single word from a log record
     void insertWord(const std::string& word, LogRecord* record);

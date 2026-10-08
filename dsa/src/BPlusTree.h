@@ -33,9 +33,11 @@ private:
 
     void insertInternal(const std::string& key, BPlusNode* cursor, BPlusNode* child);
     BPlusNode* findParent(BPlusNode* cursor, BPlusNode* child);
+    void destroyTree(BPlusNode* cursor);
 
 public:
     BPlusTree();
+    ~BPlusTree();
     void insert(LogRecord* record);
     std::vector<LogRecord*> searchRange(const std::string& start_time, const std::string& end_time);
     int getNodesAccessed() const;

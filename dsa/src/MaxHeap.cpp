@@ -5,11 +5,21 @@ MaxHeap::MaxHeap() {
 }
 
 void MaxHeap::heapifyUp(int index) {
-    while (index > 0 && heap[parent(index)]->priorityScore < heap[index]->priorityScore) {
+    while (index > 0) {
+        LogRecord* curr = heap[index];
+        LogRecord* p = heap[parent(index)];
+        bool swapNeeded = false;
+        if (curr->priorityScore > p->priorityScore) {
+            swapNeeded = true;
+        } else if (curr->priorityScore == p->priorityScore && curr->timestamp > p->timestamp) {
+            swapNeeded = true;
+        }
+        
+        if (!swapNeeded) break;
+        
         // Swap
-        LogRecord* temp = heap[parent(index)];
-        heap[parent(index)] = heap[index];
-        heap[index] = temp;
+        heap[index] = p;
+        heap[parent(index)] = curr;
         
         index = parent(index);
         nodesAccessed++;
@@ -21,12 +31,18 @@ void MaxHeap::heapifyDown(int index) {
     int left = leftChild(index);
     int right = rightChild(index);
 
-    if (left < (int)heap.size() && heap[left]->priorityScore > heap[maxIndex]->priorityScore) {
-        maxIndex = left;
+    if (left < (int)heap.size()) {
+        if (heap[left]->priorityScore > heap[maxIndex]->priorityScore ||
+           (heap[left]->priorityScore == heap[maxIndex]->priorityScore && heap[left]->timestamp > heap[maxIndex]->timestamp)) {
+            maxIndex = left;
+        }
     }
     
-    if (right < (int)heap.size() && heap[right]->priorityScore > heap[maxIndex]->priorityScore) {
-        maxIndex = right;
+    if (right < (int)heap.size()) {
+        if (heap[right]->priorityScore > heap[maxIndex]->priorityScore ||
+           (heap[right]->priorityScore == heap[maxIndex]->priorityScore && heap[right]->timestamp > heap[maxIndex]->timestamp)) {
+            maxIndex = right;
+        }
     }
 
     if (index != maxIndex) {
@@ -72,11 +88,15 @@ std::vector<LogRecord*> MaxHeap::getTopK(int k) {
     nodesAccessed = 0;
     std::vector<LogRecord*> result;
     
-    // We modify the heap during extractMax, so if we want to preserve it,
-    // we would need a copy. For our pipeline, we only extract once.
+    // Copy the vector to preserve the heap
+    std::vector<LogRecord*> tempHeap = heap;
+    
     while (!heap.empty() && result.size() < (size_t)k) {
         result.push_back(extractMax());
     }
+    
+    // Restore
+    heap = tempHeap;
     
     return result;
 }

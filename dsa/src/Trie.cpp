@@ -9,9 +9,21 @@ TrieNode::TrieNode() {
     }
 }
 
+TrieNode::~TrieNode() {
+    for (int i = 0; i < ALPHABET_SIZE; i++) {
+        if (children[i] != nullptr) {
+            delete children[i];
+        }
+    }
+}
+
 Trie::Trie() {
     root = new TrieNode();
     nodesAccessed = 0;
+}
+
+Trie::~Trie() {
+    delete root;
 }
 
 void Trie::toLowerCase(std::string& str) {

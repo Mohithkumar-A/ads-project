@@ -15,6 +15,21 @@ BPlusTree::BPlusTree() {
     nodesAccessed = 0;
 }
 
+BPlusTree::~BPlusTree() {
+    destroyTree(root);
+}
+
+void BPlusTree::destroyTree(BPlusNode* cursor) {
+    if (cursor != nullptr) {
+        if (!cursor->isLeaf) {
+            for (int i = 0; i <= cursor->size; i++) {
+                destroyTree(cursor->ptrs[i]);
+            }
+        }
+        delete cursor;
+    }
+}
+
 void BPlusTree::insert(LogRecord* record) {
     std::string key = record->timestamp;
 
@@ -202,7 +217,7 @@ std::vector<LogRecord*> BPlusTree::searchRange(const std::string& start_time, co
     // Traverse to leaf
     while (!cursor->isLeaf) {
         int i = 0;
-        while (i < cursor->size && start_time > cursor->keys[i]) {
+        while (i < cursor->size && start_time >= cursor->keys[i]) {
             i++;
         }
         cursor = cursor->ptrs[i];
