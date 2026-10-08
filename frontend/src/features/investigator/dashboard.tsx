@@ -79,14 +79,24 @@ export function Dashboard() {
 
     setStore({ asked: q, question: "", processing: true, step: 0, result: null });
 
-    for (let i = 1; i <= 5; i++) {
-      await new Promise((r) => setTimeout(r, 280));
-      setStore({ step: i });
-    }
+    try {
+      for (let i = 1; i <= 5; i++) {
+        await new Promise((r) => setTimeout(r, 280));
+        setStore({ step: i });
+      }
 
-    const next = await mockApi.investigate(logs, q);
-    setStore({ result: next, history: [...history, next], step: 6, processing: false });
-    toast.success("Investigation complete · evidence selected");
+      const next = await mockApi.investigate(logs, q);
+      setStore({ result: next, history: [...history, next], step: 6 });
+      toast.success("Investigation complete · evidence selected");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "An unknown error occurred";
+      toast.error(message, {
+        duration: 5000,
+        description: "Please check your backend services (LLM or C++ Engine).",
+      });
+    } finally {
+      setStore({ processing: false });
+    }
   }
 
   function submit(e: FormEvent) {

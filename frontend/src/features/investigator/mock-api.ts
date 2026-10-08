@@ -150,70 +150,61 @@ export const mockApi = {
     return topEvents(logs, k);
   },
   async investigate(logs: LogRecord[], question: string): Promise<InvestigationResult> {
-    await delay(400);
-    const q = question.toLowerCase();
-    const auth = /auth|token/.test(q);
-    const timeout = /timeout/.test(q);
-    const all = /most critical|critical events/.test(q);
-    const terms = auth
-      ? ["authentication", "token"]
-      : timeout
-        ? ["connection", "timeout"]
-        : ["database", "connection", "failed"];
-    const retrieved = rangeRecords(logs, "14:30:00", "14:35:00");
-    const matched = retrieved.filter((l) =>
-      all
-        ? !q.includes("db-01") || l.server === "DB-01"
-        : terms.some((t) => `${l.message} ${l.service}`.toLowerCase().includes(t)),
-    );
-    const evidence = topEvents(matched, 10);
-    const bplus_used = !all;
-    const trie_used = true;
-    const heap_used = all || auth;
-    return {
-      question,
-      terms,
-      retrieved,
-      matched,
-      evidence,
-      range: ["14:30:00", "14:35:00"],
-      summary: !evidence.length
-        ? "No matching evidence found"
-        : auth
-          ? "Authentication failures detected on AUTH-01"
-          : timeout
-            ? "Connection timeout detected on DB-01"
-            : all
-              ? "Highest-priority events selected from the indexed logs"
-              : "Database connectivity failure detected on DB-01",
-      findings: !evidence.length
-        ? ["No events in the selected dataset match this query."]
-        : auth
-          ? [
-              "Authentication errors were found in the selected time range.",
-              "Token expiration is reported in the retrieved log evidence.",
-            ]
-          : timeout
-            ? [
-                "A database connection timed out at 14:32:03.",
-                "The timeout was retrieved by timestamp and matched by keyword.",
-              ]
-            : all
-              ? [
-                  "Events are ranked using severity, frequency, and recency.",
-                  "The highest-scoring event appears first in selected evidence.",
-                ]
-              : [
-                  "Multiple connection failures occurred within a 15-second window.",
-                  "A retry attempt preceded another connection failure.",
-                  "DB-01 became unavailable at 14:32:15.",
-                  "API requests subsequently began failing.",
-                ],
-      dsa_metrics: {
-        bplus: { used: bplus_used, time: "1.2 ms", logs_retrieved: retrieved.length },
-        trie: { used: trie_used, time: "0.8 ms", logs_matched: matched.length },
-        heap: { used: heap_used, time: "2.1 ms", events_considered: matched.length, top_k: 10 },
-      },
-    };
+    try {
+      const response = await fetch("http://localhost:3001/api/investigate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: question,
+          logText: logText(logs),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.details || errorData.error || `Server error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      const bplusMetric = data.dsa_metrics?.find((m: any) => m.name === "B+ Tree") || {};
+      const trieMetric = data.dsa_metrics?.find((m: any) => m.name === "Trie") || {};
+      const heapMetric = data.dsa_metrics?.find((m: any) => m.name === "Heap") || {};
+      
+      return {
+        question,
+        terms: data.tool_call?.trie?.keywords || [],
+        retrieved: data.evidence || [],
+        matched: data.evidence || [],
+        evidence: data.evidence || [],
+        summary: data.summary || "No summary provided.",
+        findings: data.key_findings || [],
+        range: [
+          data.tool_call?.bplus?.start_time || "00:00:00", 
+          data.tool_call?.bplus?.end_time || "23:59:59"
+        ],
+        dsa_metrics: {
+          bplus: { 
+            used: Boolean(bplusMetric.used), 
+            time: `${bplusMetric.time_ms || 0} ms`, 
+            logs_retrieved: bplusMetric.results_count || 0 
+          },
+          trie: { 
+            used: Boolean(trieMetric.used), 
+            time: `${trieMetric.time_ms || 0} ms`, 
+            logs_matched: trieMetric.results_count || 0 
+          },
+          heap: { 
+            used: Boolean(heapMetric.used), 
+            time: `${heapMetric.time_ms || 0} ms`, 
+            events_considered: heapMetric.nodes_accessed || 0, 
+            top_k: data.tool_call?.heap?.top_k || 10 
+          },
+        },
+      };
+    } catch (err) {
+      console.error("Investigation failed:", err);
+      throw err; // Re-throw to be caught by the Dashboard toast
+    }
   },
 };
