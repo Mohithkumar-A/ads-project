@@ -37,7 +37,7 @@ export function BPlusPage() {
             <span className="section-tag">SCALABLE · ZOOM/PAN SUPPORTED</span>
           </SectionHeading>
           <div className="visualization-body relative overflow-hidden cursor-move">
-            <TreeGraphic type="bplus" large active={true} />
+            <TreeGraphic type="bplus" large active={used} range={range} events={evidence} />
           </div>
           <div className="visualization-legend">
             <span className="legend-key">
@@ -120,7 +120,7 @@ export function TriePage() {
             <span className="section-tag">SCALABLE · ZOOM/PAN SUPPORTED</span>
           </SectionHeading>
           <div className="visualization-body relative overflow-hidden cursor-move">
-            <TreeGraphic type="trie" large active={true} term={terms[0] || "database"} />
+            <TreeGraphic type="trie" large active={used} keywords={terms} />
           </div>
           <div className="visualization-legend">
             <span className="legend-key">
@@ -205,7 +205,7 @@ export function HeapPage() {
             <span className="section-tag">SCALABLE · ZOOM/PAN SUPPORTED</span>
           </SectionHeading>
           <div className="visualization-body relative overflow-hidden cursor-move">
-            <TreeGraphic type="heap" large events={evidence.slice(0, 7)} />
+            <TreeGraphic type="heap" large active={used} events={evidence.slice(0, 7)} />
           </div>
           <div className="visualization-legend">
             <span className="legend-key">

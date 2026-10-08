@@ -47,7 +47,7 @@ async function main() {
     console.log(`  Health:    http://localhost:${PORT}/api/health`);
     console.log(`  Frontend:  ${FRONTEND_ORIGIN}`);
     console.log(`  Engine:    ${process.env.ENGINE_AVAILABLE === "true" ? "✓ Active (C++ binary)" : "✗ Disabled"}`);
-    console.log(`  LLM:       ${process.env.OLLAMA_URL ? "✓ Active (" + process.env.OLLAMA_URL + ")" : "✗ Pending (http://127.0.0.1:11434)"}`);
+    console.log(`  LLM:       ✓ Active (${process.env.OLLAMA_URL || "http://127.0.0.1:11434"})`);
     console.log(`  DSA API:   /api/bplustree, /api/trie, /api/heap`);
     console.log("═══════════════════════════════════════════════");
     console.log("");

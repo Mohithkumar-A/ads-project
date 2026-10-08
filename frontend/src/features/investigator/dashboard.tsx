@@ -491,21 +491,6 @@ export function Dashboard() {
                 <AlertTriangle />
                 {result.summary}
               </h3>
-              <p
-                style={{
-                  fontSize: "11px",
-                  lineHeight: "1.7",
-                  color: "var(--muted-foreground)",
-                  marginTop: "10px",
-                  marginBottom: "18px",
-                }}
-              >
-                The system experienced a sudden spike in connection timeouts starting at{" "}
-                {result.evidence[0]?.timestamp.slice(11) ?? "14:32:03"}, which rapidly escalated
-                into full connection failures. Repeated retry attempts were unsuccessful, ultimately
-                leading to the database becoming completely unavailable and cascading failures in
-                API requests.
-              </p>
               <div className="findings-title">Key findings</div>
               <ul className="findings-list">
                 {result.key_findings.map((f) => (
