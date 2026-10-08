@@ -8,6 +8,7 @@ export type LogRecord = {
   message: string;
   frequency: number;
   recency: number;
+  priorityScore?: number;
 };
 export const severityWeights: Record<Severity, number> = {
   CRITICAL: 10,
@@ -107,20 +108,44 @@ export const indexedTerms = [
   "request",
   "request_failed",
 ];
+export interface BPlusParams {
+  used: boolean;
+  start_time: string;
+  end_time: string;
+}
+
+export interface TrieParams {
+  used: boolean;
+  keywords: string[];
+}
+
+export interface HeapParams {
+  used: boolean;
+  top_k: number;
+}
+
+export interface AgentToolCall {
+  bplus: BPlusParams;
+  trie: TrieParams;
+  heap: HeapParams;
+}
+
+export interface DSAMetrics {
+  name: string;
+  used: boolean;
+  time_ms: number;
+  nodes_accessed: number;
+  results_count: number;
+}
+
 export type InvestigationResult = {
   question: string;
-  terms: string[];
-  retrieved: LogRecord[];
-  matched: LogRecord[];
-  evidence: LogRecord[];
   summary: string;
-  findings: string[];
-  range: [string, string];
-  dsa_metrics: {
-    bplus: { used: boolean; time: string; logs_retrieved: number };
-    trie: { used: boolean; time: string; logs_matched: number };
-    heap: { used: boolean; time: string; events_considered: number; top_k: number };
-  };
+  key_findings: string[];
+  evidence: LogRecord[];
+  dsa_metrics: DSAMetrics[];
+  tool_call: AgentToolCall;
+  processing_time_ms: number;
 };
 // REST adapter: methods call the backend C++ engine, with local JS fallbacks.
 export const endpoints = {
@@ -221,34 +246,12 @@ export const mockApi = {
       
       return {
         question,
-        terms: data.tool_call?.trie?.keywords || [],
-        retrieved: data.evidence || [],
-        matched: data.evidence || [],
+        tool_call: data.tool_call,
         evidence: data.evidence || [],
         summary: data.summary || "No summary provided.",
-        findings: data.key_findings || [],
-        range: [
-          data.tool_call?.bplus?.start_time || "00:00:00", 
-          data.tool_call?.bplus?.end_time || "23:59:59"
-        ],
-        dsa_metrics: {
-          bplus: { 
-            used: Boolean(bplusMetric.used), 
-            time: `${bplusMetric.time_ms || 0} ms`, 
-            logs_retrieved: bplusMetric.results_count || 0 
-          },
-          trie: { 
-            used: Boolean(trieMetric.used), 
-            time: `${trieMetric.time_ms || 0} ms`, 
-            logs_matched: trieMetric.results_count || 0 
-          },
-          heap: { 
-            used: Boolean(heapMetric.used), 
-            time: `${heapMetric.time_ms || 0} ms`, 
-            events_considered: heapMetric.nodes_accessed || 0, 
-            top_k: data.tool_call?.heap?.top_k || 10 
-          },
-        },
+        key_findings: data.key_findings || [],
+        dsa_metrics: data.dsa_metrics || [],
+        processing_time_ms: data.processing_time_ms || 0,
       };
     } catch (err) {
       console.error("Investigation failed:", err);

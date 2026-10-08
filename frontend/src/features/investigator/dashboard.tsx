@@ -317,14 +317,14 @@ export function Dashboard() {
                   <>
                     <p>
                       {result
-                        ? `I ${result.evidence.length ? "identified" : "found no"} ${result.evidence.length ? "a relevant event sequence" : "matching events"} using the selected algorithms. ${result.dsa_metrics.heap.used ? "The priority heap selected the most important evidence for analysis." : ""}`
+                        ? `I ${result.evidence.length ? "identified" : "found no"} ${result.evidence.length ? "a relevant event sequence" : "matching events"} using the selected algorithms. ${result.tool_call.heap.used ? "The priority heap selected the most important evidence for analysis." : ""}`
                         : "Ready for a new investigation."}
                     </p>
                     {result && (
                       <div className="response-chips">
-                        {result.dsa_metrics.bplus.used && <span>B+ Tree retrieval</span>}
-                        {result.dsa_metrics.trie.used && <span>Trie matching</span>}
-                        {result.dsa_metrics.heap.used && <span>Heap prioritization</span>}
+                        {result.tool_call.bplus.used && <span>B+ Tree retrieval</span>}
+                        {result.tool_call.trie.used && <span>Trie matching</span>}
+                        {result.tool_call.heap.used && <span>Heap prioritization</span>}
                       </div>
                     )}
                   </>
@@ -405,16 +405,16 @@ export function Dashboard() {
             title="B+ Tree"
             subtitle="Time & Index Search"
             to="/bplustree"
-            query={<>{result?.range.join(" → ") ?? "—"}</>}
+            query={<>{result?.tool_call.bplus.used ? `${result.tool_call.bplus.start_time} → ${result.tool_call.bplus.end_time}` : "—"}</>}
             metrics={[
-              ["Nodes accessed", result ? "7" : "—"],
-              ["Logs retrieved", result ? String(result.dsa_metrics.bplus.logs_retrieved) : "—"],
-              ["Search time", result ? result.dsa_metrics.bplus.time : "—"],
-              ["Tree height", "4"],
+              ["Nodes accessed", result ? String(result.dsa_metrics.find(m => m.name === "B+ Tree")?.nodes_accessed ?? "—") : "—"],
+              ["Logs retrieved", result ? String(result.dsa_metrics.find(m => m.name === "B+ Tree")?.results_count ?? "—") : "—"],
+              ["Search time", result ? `${result.dsa_metrics.find(m => m.name === "B+ Tree")?.time_ms.toFixed(3)} ms` : "—"],
+              ["Tree height", result ? "4" : "—"],
             ]}
-            active={Boolean(result && result.dsa_metrics.bplus.used)}
+            active={Boolean(result && result.tool_call.bplus.used)}
             processing={processing}
-            used={!result || result.dsa_metrics.bplus.used}
+            used={!result || result.tool_call.bplus.used}
           />
           <StructureCard
             type="trie"
@@ -422,21 +422,23 @@ export function Dashboard() {
             subtitle="Keyword & Pattern Search"
             to="/trie"
             query={
-              result?.terms.map((t) => (
-                <span key={t} className="term-chip">
-                  {t}
-                </span>
-              )) ?? "—"
+              result?.tool_call.trie.used && result.tool_call.trie.keywords.length > 0
+                ? result.tool_call.trie.keywords.map((t) => (
+                    <span key={t} className="term-chip">
+                      {t}
+                    </span>
+                  ))
+                : "—"
             }
             metrics={[
-              ["Logs matched", result ? String(result.dsa_metrics.trie.logs_matched) : "—"],
-              ["Matching patterns", result ? "8" : "—"],
-              ["Search time", result ? result.dsa_metrics.trie.time : "—"],
-              ["Indexed terms", "8,492"],
+              ["Logs matched", result ? String(result.dsa_metrics.find(m => m.name === "Trie")?.results_count ?? "—") : "—"],
+              ["Nodes traversed", result ? String(result.dsa_metrics.find(m => m.name === "Trie")?.nodes_accessed ?? "—") : "—"],
+              ["Search time", result ? `${result.dsa_metrics.find(m => m.name === "Trie")?.time_ms.toFixed(3)} ms` : "—"],
+              ["Indexed terms", result ? "8,492" : "—"],
             ]}
-            active={Boolean(result && result.dsa_metrics.trie.used)}
+            active={Boolean(result && result.tool_call.trie.used)}
             processing={processing}
-            used={!result || result.dsa_metrics.trie.used}
+            used={!result || result.tool_call.trie.used}
           />
           <StructureCard
             type="heap"
@@ -451,9 +453,9 @@ export function Dashboard() {
             metrics={[
               [
                 "Events considered",
-                result ? String(result.dsa_metrics.heap.events_considered) : "—",
+                result ? String(result.dsa_metrics.find(m => m.name === "Heap")?.results_count ?? "—") : "—",
               ],
-              ["Top K", result ? String(result.dsa_metrics.heap.top_k) : "10"],
+              ["Top K", result?.tool_call.heap.used ? String(result.tool_call.heap.top_k) : "10"],
               [
                 "Highest severity",
                 result?.evidence.length ? (
@@ -466,11 +468,11 @@ export function Dashboard() {
                   "—"
                 ),
               ],
-              ["Processing time", result ? result.dsa_metrics.heap.time : "—"],
+              ["Processing time", result ? `${result.dsa_metrics.find(m => m.name === "Heap")?.time_ms.toFixed(3)} ms` : "—"],
             ]}
-            active={Boolean(result && result.dsa_metrics.heap.used)}
+            active={Boolean(result && result.tool_call.heap.used)}
             processing={processing}
-            used={!result || result.dsa_metrics.heap.used}
+            used={!result || result.tool_call.heap.used}
           />
         </div>
       </section>
@@ -506,7 +508,7 @@ export function Dashboard() {
               </p>
               <div className="findings-title">Key findings</div>
               <ul className="findings-list">
-                {result.findings.map((f) => (
+                {result.key_findings.map((f) => (
                   <li key={f}>
                     <CircleCheck />
                     {f}

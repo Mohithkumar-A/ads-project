@@ -9,17 +9,17 @@ import {
   LogTable,
   SeverityBadge,
 } from "./components";
-import { sampleLogs, topEvents, severityWeights, priorityScore } from "./mock-api";
-
-const mockResult = {
-  range: ["14:30:00", "14:35:00"],
-  terms: ["database", "timeout", "connection"],
-  retrieved: sampleLogs.slice(1, 10),
-  matched: sampleLogs.slice(2, 8),
-  evidence: sampleLogs.slice(2, 8),
-};
+import { useInvestigationStore } from "./store";
 
 export function BPlusPage() {
+  const [store] = useInvestigationStore();
+  const { result } = store;
+
+  const used = result?.tool_call?.bplus?.used ?? false;
+  const range = used && result?.tool_call?.bplus ? [result.tool_call.bplus.start_time, result.tool_call.bplus.end_time] : ["—", "—"];
+  const metrics = result?.dsa_metrics?.find(m => m.name === "B+ Tree");
+  const evidence = used && result?.evidence ? result.evidence : [];
+
   return (
     <AppShell>
       <PageHeader
@@ -43,18 +43,17 @@ export function BPlusPage() {
             <span className="legend-key">
               <span className="legend-square" /> Active retrieval path for current query
             </span>
-            <span>{mockResult.range.join(" → ")}</span>
+            <span>{range.join(" → ")}</span>
           </div>
         </Panel>
       </div>
 
       <Stats
         items={[
-          ["Total Indexed Records", "100,000"],
-          ["Tree Height", 4],
-          ["Number of Nodes", 128],
-          ["Leaf Nodes", 96],
-          ["Search Time", "3.8 ms"],
+          ["Search Performed", used ? "Yes" : "No"],
+          ["Search Time", metrics ? `${metrics.time_ms.toFixed(3)} ms` : "—"],
+          ["Nodes Accessed", metrics ? metrics.nodes_accessed : "—"],
+          ["Results Found", metrics ? metrics.results_count : "—"],
         ]}
       />
 
@@ -67,15 +66,15 @@ export function BPlusPage() {
             <div className="findings-title">Traversal Process</div>
             <p className="small-note mb-4">
               Navigated from root node down to leaf nodes covering the time range{" "}
-              {mockResult.range.join(" to ")}. 7 nodes were accessed during this traversal.
+              {range.join(" to ")}. {metrics?.nodes_accessed ?? "—"} nodes were accessed during this traversal.
             </p>
             <div className="findings-title">Key Findings</div>
             <ul className="findings-list">
               <li>
-                <CircleCheck /> Found 1,284 logs in the specified range.
+                <CircleCheck /> Found {metrics?.results_count ?? 0} logs in the specified range.
               </li>
               <li>
-                <CircleCheck /> Identified a cluster of critical errors at 14:32.
+                <CircleCheck /> {used ? "Dynamically queried by C++ engine." : "Awaiting investigation."}
               </li>
             </ul>
           </div>
@@ -83,10 +82,10 @@ export function BPlusPage() {
         <Panel className="results-panel !mt-0">
           <SectionHeading title="Retrieved Logs">
             <span className="section-tag">
-              {mockResult.retrieved.length} records · Retrieved by B+ Tree
+              {evidence.length} records · Retrieved by B+ Tree
             </span>
           </SectionHeading>
-          <LogTable logs={mockResult.retrieved} />
+          <LogTable logs={evidence} />
         </Panel>
       </div>
 
@@ -99,6 +98,14 @@ export function BPlusPage() {
 }
 
 export function TriePage() {
+  const [store] = useInvestigationStore();
+  const { result } = store;
+
+  const used = result?.tool_call?.trie?.used ?? false;
+  const terms = used && result?.tool_call?.trie ? result.tool_call.trie.keywords : [];
+  const metrics = result?.dsa_metrics?.find(m => m.name === "Trie");
+  const evidence = used && result?.evidence ? result.evidence : [];
+
   return (
     <AppShell>
       <PageHeader title="Trie" subtitle="Fast keyword, prefix and pattern-based log search">
@@ -113,24 +120,23 @@ export function TriePage() {
             <span className="section-tag">SCALABLE · ZOOM/PAN SUPPORTED</span>
           </SectionHeading>
           <div className="visualization-body relative overflow-hidden cursor-move">
-            <TreeGraphic type="trie" large active={true} term="database" />
+            <TreeGraphic type="trie" large active={true} term={terms[0] || "database"} />
           </div>
           <div className="visualization-legend">
             <span className="legend-key">
               <span className="legend-square" /> Matched search path for current query
             </span>
-            <span>database, timeout, connection</span>
+            <span>{terms.length > 0 ? terms.join(", ") : "—"}</span>
           </div>
         </Panel>
       </div>
 
       <Stats
         items={[
-          ["Indexed Terms", "8,492"],
-          ["Trie Nodes", "24,108"],
-          ["Maximum Depth", 18],
-          ["Matching Patterns", 8],
-          ["Search Time", "1.7 ms"],
+          ["Search Performed", used ? "Yes" : "No"],
+          ["Search Time", metrics ? `${metrics.time_ms.toFixed(3)} ms` : "—"],
+          ["Nodes Traversed", metrics ? metrics.nodes_accessed : "—"],
+          ["Results Found", metrics ? metrics.results_count : "—"],
         ]}
       />
 
@@ -142,16 +148,15 @@ export function TriePage() {
           <div className="operation-body">
             <div className="findings-title">Traversal Process</div>
             <p className="small-note mb-4">
-              Traversed Trie paths for keywords: 'database', 'timeout', 'connection'. Matched 8
-              unique patterns.
+              Traversed Trie paths for keywords: {terms.length > 0 ? terms.join(", ") : "—"}. {metrics?.nodes_accessed ?? "—"} nodes were accessed.
             </p>
             <div className="findings-title">Key Findings</div>
             <ul className="findings-list">
               <li>
-                <CircleCheck /> Matched 'database' and 'timeout' across 342 logs in 1.7ms.
+                <CircleCheck /> Matched {terms.length} keywords across {metrics?.results_count ?? 0} logs in {metrics?.time_ms.toFixed(3) ?? "—"}ms.
               </li>
               <li>
-                <CircleCheck /> Most frequent pattern matched: 'database_unavailable'.
+                <CircleCheck /> {used ? "Dynamically queried by C++ engine." : "Awaiting investigation."}
               </li>
             </ul>
           </div>
@@ -159,10 +164,10 @@ export function TriePage() {
         <Panel className="results-panel !mt-0">
           <SectionHeading title="Matching log records">
             <span className="section-tag">
-              {mockResult.matched.length} records · Matched by Trie
+              {evidence.length} records · Matched by Trie
             </span>
           </SectionHeading>
-          <LogTable logs={mockResult.matched} />
+          <LogTable logs={evidence} />
         </Panel>
       </div>
 
@@ -175,7 +180,13 @@ export function TriePage() {
 }
 
 export function HeapPage() {
-  const topK = topEvents(sampleLogs, 10);
+  const [store] = useInvestigationStore();
+  const { result } = store;
+
+  const used = result?.tool_call?.heap?.used ?? false;
+  const k = used && result?.tool_call?.heap ? result.tool_call.heap.top_k : "—";
+  const metrics = result?.dsa_metrics?.find(m => m.name === "Heap");
+  const evidence = used && result?.evidence ? result.evidence : [];
 
   return (
     <AppShell>
@@ -194,23 +205,23 @@ export function HeapPage() {
             <span className="section-tag">SCALABLE · ZOOM/PAN SUPPORTED</span>
           </SectionHeading>
           <div className="visualization-body relative overflow-hidden cursor-move">
-            <TreeGraphic type="heap" large events={topEvents(sampleLogs, 7)} />
+            <TreeGraphic type="heap" large events={evidence.slice(0, 7)} />
           </div>
           <div className="visualization-legend">
             <span className="legend-key">
               <span className="legend-square" /> Severity + frequency + recency
             </span>
-            <span>1,284 events in heap</span>
+            <span>{metrics?.results_count ?? "—"} events processed in heap</span>
           </div>
         </Panel>
       </div>
 
       <Stats
         items={[
-          ["Events in Heap", "1,284"],
-          ["Maximum Priority", 97],
-          ["Top K", 10],
-          ["Processing Time", "2.1 ms"],
+          ["Search Performed", used ? "Yes" : "No"],
+          ["Processing Time", metrics ? `${metrics.time_ms.toFixed(3)} ms` : "—"],
+          ["Nodes Sifted", metrics ? metrics.nodes_accessed : "—"],
+          ["Top K Extracted", k],
         ]}
       />
 
@@ -222,16 +233,16 @@ export function HeapPage() {
           <div className="operation-body">
             <div className="findings-title">Prioritization Process</div>
             <p className="small-note mb-4">
-              Sifted 1,284 logs through the priority max-heap based on severity, frequency, and
-              recency using deterministic scoring rules.
+              Sifted logs through the priority max-heap based on severity, frequency, and
+              recency using deterministic scoring rules. {metrics?.nodes_accessed ?? "—"} heap sift operations performed.
             </p>
             <div className="findings-title">Key Findings</div>
             <ul className="findings-list">
               <li>
-                <CircleCheck /> Elevated DB-01 unavailable to Priority 1 based on CRITICAL severity.
+                <CircleCheck /> Extracted Top {evidence.length} most critical events in {metrics?.time_ms.toFixed(3) ?? "—"}ms.
               </li>
               <li>
-                <CircleCheck /> Identified 3 CRITICAL events in the Top 10.
+                <CircleCheck /> {used ? "Dynamically queried by C++ engine." : "Awaiting investigation."}
               </li>
             </ul>
           </div>
@@ -241,7 +252,7 @@ export function HeapPage() {
             <span className="section-tag">Prioritized by Heap</span>
           </SectionHeading>
           <div className="top-events">
-            {topK.map((event, i) => (
+            {evidence.map((event, i) => (
               <div className="event-row" key={event.id}>
                 <span className="event-rank">{String(i + 1).padStart(2, "0")}</span>
                 <SeverityBadge severity={event.severity} />
@@ -251,7 +262,7 @@ export function HeapPage() {
                     {event.server} · {event.timestamp.slice(11)}
                   </small>
                 </div>
-                <span className="event-score">{priorityScore(event)}</span>
+                <span className="event-score">{event.priorityScore ?? "—"}</span>
               </div>
             ))}
           </div>

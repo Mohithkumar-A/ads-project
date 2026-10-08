@@ -35,7 +35,8 @@ struct LogRecord {
                ",\"message\":\"" + escapeJSON(message) + "\"" +
                ",\"service\":\"" + escapeJSON(service) + "\"" +
                ",\"frequency\":" + std::to_string(frequency) +
-               ",\"recency\":" + std::to_string(recency) + "}";
+               ",\"recency\":" + std::to_string(recency) +
+               ",\"priorityScore\":" + std::to_string(priorityScore) + "}";
     }
 };
 
