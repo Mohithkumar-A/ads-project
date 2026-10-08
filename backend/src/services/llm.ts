@@ -1,17 +1,12 @@
 // ─────────────────────────────────────────────────────────────
 // LLM Service — Ollama Integration
-//
-// ⚠️  PLACEHOLDER: The actual Ollama endpoint / API key will be
-//     provided later. Everything around these two functions is
-//     fully wired — just swap the TODO bodies with real fetch calls.
 // ─────────────────────────────────────────────────────────────
 
 import type { AgentToolCall } from "../types";
 
 // ── Configuration ────────────────────────────────────────────
-// TODO: Replace with your actual Ollama endpoint once ready
 const OLLAMA_BASE_URL = process.env.OLLAMA_URL || "http://127.0.0.1:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.1";
 
 // No default fallback anymore - we want to fail explicitly if LLM is down.
 // const DEFAULT_TOOL_CALL: AgentToolCall = { ... };
