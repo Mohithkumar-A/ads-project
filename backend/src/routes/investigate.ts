@@ -162,8 +162,8 @@ router.post(
 router.get("/health", (_req: Request, res: Response) => {
   res.json({
     status: "ok",
-    engine_available: false, // flip when C++ binary is compiled
-    llm_available: false, // flip when Ollama is connected
+    engine_available: process.env.ENGINE_AVAILABLE === "true",
+    llm_available: Boolean(process.env.OLLAMA_URL),
     timestamp: new Date().toISOString(),
   });
 });

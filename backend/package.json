@@ -4,9 +4,9 @@
   "description": "Node.js orchestrator for the AI-Powered Log Investigation Engine",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "ENGINE_AVAILABLE=true tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "ENGINE_AVAILABLE=true node dist/index.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

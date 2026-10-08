@@ -122,8 +122,7 @@ export type InvestigationResult = {
     heap: { used: boolean; time: string; events_considered: number; top_k: number };
   };
 };
-const delay = (ms = 350) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-// Mock REST adapter: replace these method bodies with fetch calls to the endpoint map.
+// REST adapter: methods call the backend C++ engine, with local JS fallbacks.
 export const endpoints = {
   logs: "/api/logs",
   investigation: "/api/investigation",
@@ -131,23 +130,72 @@ export const endpoints = {
   trie: "/api/trie",
   heap: "/api/heap",
 };
+const API_BASE = "http://localhost:3001";
 export const mockApi = {
   async range(logs: LogRecord[], start: string, end: string) {
-    await delay();
-    return rangeRecords(logs, start, end);
+    try {
+      const response = await fetch(`${API_BASE}/api/bplustree`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          logText: logText(logs),
+          start_time: start,
+          end_time: end,
+        }),
+      });
+      if (!response.ok) throw new Error(`Server error: ${response.status}`);
+      const data = await response.json();
+      return (data.evidence ?? []) as LogRecord[];
+    } catch {
+      // Fallback to local JS if backend is unreachable
+      return rangeRecords(logs, start, end);
+    }
   },
-  async trie(logs: LogRecord[], term: string, prefix = false) {
-    await delay();
-    return {
-      logs: searchRecords(logs, term),
-      patterns: indexedTerms.filter((t) =>
-        prefix ? t.startsWith(term.toLowerCase()) : t.includes(term.toLowerCase()),
-      ),
-    };
+  async trie(logs: LogRecord[], term: string, _prefix = false) {
+    try {
+      const response = await fetch(`${API_BASE}/api/trie`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          logText: logText(logs),
+          keyword: term,
+        }),
+      });
+      if (!response.ok) throw new Error(`Server error: ${response.status}`);
+      const data = await response.json();
+      return {
+        logs: (data.evidence ?? []) as LogRecord[],
+        patterns: indexedTerms.filter((t) =>
+          t.includes(term.toLowerCase()),
+        ),
+      };
+    } catch {
+      // Fallback to local JS if backend is unreachable
+      return {
+        logs: searchRecords(logs, term),
+        patterns: indexedTerms.filter((t) =>
+          t.includes(term.toLowerCase()),
+        ),
+      };
+    }
   },
   async heap(logs: LogRecord[], k: number) {
-    await delay();
-    return topEvents(logs, k);
+    try {
+      const response = await fetch(`${API_BASE}/api/heap`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          logText: logText(logs),
+          k,
+        }),
+      });
+      if (!response.ok) throw new Error(`Server error: ${response.status}`);
+      const data = await response.json();
+      return (data.evidence ?? []) as LogRecord[];
+    } catch {
+      // Fallback to local JS if backend is unreachable
+      return topEvents(logs, k);
+    }
   },
   async investigate(logs: LogRecord[], question: string): Promise<InvestigationResult> {
     try {

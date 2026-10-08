@@ -1,13 +1,11 @@
 // ─────────────────────────────────────────────────────────────
 // C++ DSA Engine Service
 //
-// ⚠️  PLACEHOLDER: The actual C++ binary does not exist yet.
-//     This module contains the full child_process spawning logic
-//     ready to go. Once engine.out is compiled, just update the
-//     ENGINE_PATH constant and everything will work.
+// Spawns the compiled C++ binary (dsa/engine.out) as a child
+// process, passing CLI arguments for the requested data
+// structures. Parses the JSON output from stdout.
 //
-//     Until then, it returns mock data so the pipeline runs
-//     end-to-end without the binary.
+// Set ENGINE_AVAILABLE=true to enable the real engine.
 // ─────────────────────────────────────────────────────────────
 
 import { spawn } from "child_process";

@@ -5,6 +5,7 @@
 import express from "express";
 import cors from "cors";
 import investigateRouter from "./routes/investigate";
+import dsaRouter from "./routes/dsa";
 import { ensureTempDir } from "./utils/fileManager";
 
 const PORT = parseInt(process.env.PORT || "3001", 10);
@@ -23,6 +24,7 @@ async function main() {
 
   // ── Routes ─────────────────────────────────────────────────
   app.use("/api", investigateRouter);
+  app.use("/api", dsaRouter);
 
   // ── 404 fallback ───────────────────────────────────────────
   app.use((_req, res) => {
@@ -44,8 +46,9 @@ async function main() {
     console.log(`  Server:    http://localhost:${PORT}`);
     console.log(`  Health:    http://localhost:${PORT}/api/health`);
     console.log(`  Frontend:  ${FRONTEND_ORIGIN}`);
-    console.log(`  Engine:    ${process.env.ENGINE_AVAILABLE === "true" ? "Active (C++ binary)" : "Mock (placeholder)"}`);
-    console.log(`  LLM:       ${process.env.OLLAMA_URL ? "Active (" + process.env.OLLAMA_URL + ")" : "Mock/Fallback (http://127.0.0.1:11434)"}`);
+    console.log(`  Engine:    ${process.env.ENGINE_AVAILABLE === "true" ? "✓ Active (C++ binary)" : "✗ Disabled"}`);
+    console.log(`  LLM:       ${process.env.OLLAMA_URL ? "✓ Active (" + process.env.OLLAMA_URL + ")" : "✗ Pending (http://127.0.0.1:11434)"}`);
+    console.log(`  DSA API:   /api/bplustree, /api/trie, /api/heap`);
     console.log("═══════════════════════════════════════════════");
     console.log("");
   });
