@@ -112,8 +112,10 @@ Header:
 
 Provide:
 
-- Large textarea/code editor style area for pasting logs
-- Upload Log button
+- Multiple upload methods:
+  - Drag-and-drop file support
+  - File picker (Upload Log button)
+  - Large textarea/code editor style area for directly copy-pasting logs
 - Load Sample Dataset button
 - Clear button
 
@@ -149,7 +151,7 @@ These values should be mock data initially and structured so they can later be c
 
 # 4. SECTION B — Natural Language Investigation
 
-Create a ChatGPT-like investigation panel.
+Create a highly polished, ChatGPT-like investigation panel.
 
 Header:
 
@@ -157,11 +159,11 @@ Header:
 
 Include:
 
-- Conversation/history area
-- User question bubble
+- A seamless chat interface (like ChatGPT)
+- Conversation/history area with distinct user and AI bubbles
 - System/AI response area
-- Text input
-- Send button
+- Text input with a prominent Send button
+- Support for multiline input
 
 Example questions:
 
@@ -173,22 +175,20 @@ Example questions:
 
 > Find all connection timeout events.
 
-The important design requirement is that this should NOT look like a generic ChatGPT clone.
-
 It should visually communicate:
 
-**Question → Query Interpretation → ADS Retrieval → Evidence → AI Explanation**
+**Question → Query Interpretation → ADS Retrieval → AI Explanation**
 
-When a question is submitted, show a compact investigation progress indicator:
+When a question is submitted, show a dynamic, step-by-step investigation progress pipeline. Use loading symbols (spinners/pulses) for active states, checkmarks for completed, and error icons if something fails:
 
 ```text
-✓ Query interpreted
-✓ B+ Tree search completed
-✓ Trie search completed
-✓ Heap prioritization completed
-✓ Evidence selected
-● Generating analysis...
+[✓] Query interpreted
+[✓] B+ Tree search completed
+[✓] Trie search completed
+[✓] Heap prioritization completed
+[↻] Generating analysis... (loading)
 ```
+Any errors during the process should be clearly reported in this pipeline.
 
 ---
 
@@ -328,21 +328,21 @@ Make the card clickable and navigate to the dedicated **Heap page**.
 
 # 6. SECTION D — AI Analysis & Final Results
 
-Create a large panel.
+Create a large panel for the final investigation report.
 
 Header:
 
 **4. AI Analysis & Final Results**
 
+This section should look like a cohesive, unified report rather than disjointed parts. Do not include explicit raw log evidence or timelines here.
+
 Display:
 
 ### Incident Summary
 
+A comprehensive paragraph explaining the incident.
 Example:
-
-**Database connectivity failure detected on DB-01**
-
-Then show:
+**Database connectivity failure detected on DB-01.** The system experienced a sudden spike in connection timeouts starting at 14:32:03, which rapidly escalated into full connection failures. Repeated retry attempts were unsuccessful, ultimately leading to the database becoming completely unavailable and cascading failures in API requests.
 
 ### Key Findings
 
@@ -351,73 +351,28 @@ Then show:
 - DB-01 became unavailable.
 - API requests subsequently began failing.
 
-### Event Timeline
-
-Create a horizontal or vertical timeline:
-
-```text
-14:32:03
-Connection timeout
-
-       ↓
-
-14:32:05
-Connection failed
-
-       ↓
-
-14:32:08
-Retry attempt
-
-       ↓
-
-14:32:12
-Connection failed
-
-       ↓
-
-14:32:15
-Database unavailable
-```
-
-### Evidence
-
-Show the actual log entries that were selected by the ADS pipeline.
-
-Clearly label:
-
-**Retrieved by B+ Tree**
-
-**Matched by Trie**
-
-**Prioritized by Heap**
-
-This is extremely important because the user should be able to see that the AI explanation is based on actual retrieved evidence.
-
 ---
 
 # 7. Investigation Pipeline Visualization
 
-Somewhere near the results section, display a compact pipeline:
+Somewhere near the chat or results section, display a dynamic, step-by-step pipeline. Instead of a static visual, it should have active states, loading symbols, and error reporting.
 
 ```text
 USER QUESTION
       ↓
-QUERY INTERPRETATION
+[✓] QUERY INTERPRETATION
       ↓
 ┌────────────┬────────────┬────────────┐
-│ B+ TREE    │   TRIE     │   HEAP     │
-│ Retrieval  │   Search   │ Prioritize │
+│ [✓] B+ TREE│ [✓] TRIE   │ [✓] HEAP   │
+│ Retrieval  │ Search     │ Prioritize │
 └────────────┴────────────┴────────────┘
       ↓
-SELECTED EVIDENCE
-      ↓
-LOCAL LLM
+[↻] LOCAL LLM (Analyzing...)
       ↓
 INVESTIGATION RESULT
 ```
 
-Use connecting lines/arrows and active states while processing.
+Use connecting lines/arrows, spinning loaders for active processing, and error states if a step fails.
 
 This pipeline should be one of the visual highlights of the dashboard.
 
@@ -435,13 +390,13 @@ Subtitle:
 
 **Ordered indexing and efficient range-based log retrieval**
 
-The page should explain visually what the B+ Tree is doing in this project without becoming a textbook page.
+This page must contextualize itself based on the *current investigation* from the dashboard. There are no manual operations here. It visualizes how the B+ Tree processed the last query.
 
 ---
 
 ## B+ Tree Visualization
 
-Create a large interactive-looking B+ Tree visualization.
+Create a highly scalable B+ Tree visualization that supports large datasets (e.g., zoom/pan capabilities, summarized nodes). The frontend will solely handle rendering the graph based on data provided by the C++ backend.
 
 Example:
 
@@ -454,51 +409,16 @@ Example:
                   ... ...      ... ...      ... ...
 ```
 
-Use realistic node values based on timestamps.
-
-Highlight the nodes involved in the currently selected search.
+Highlight the nodes and the exact traversal path involved in answering the current investigation question.
 
 ---
 
-## Operations Panel
+## Data Structure Report & Findings
 
-Provide controls:
+Display a report generated by the B+ Tree for the current investigation:
 
-**Operation**
-
-- Insert Log
-- Search
-- Range Search
-- Rebuild Index
-
-For Range Search:
-
-```text
-Start Time: [14:30:00]
-End Time:   [14:35:00]
-
-[ Execute Range Search ]
-```
-
-Display:
-
-- Nodes accessed
-- Records found
-- Tree height
-- Search time
-- Number of comparisons
-
----
-
-## Search Results
-
-Display matching log records in a table:
-
-```text
-Timestamp | Server | Severity | Message
-```
-
-Highlight the records retrieved through the B+ Tree.
+- **Traversal Process:** Explain how the tree was navigated for this specific query.
+- **Key Findings:** What the B+ Tree specifically uncovered (e.g., "Found 1,284 logs in the 14:30-14:35 range. 7 nodes accessed.").
 
 ---
 
@@ -557,47 +477,16 @@ Highlight the path for the currently searched term.
 
 ---
 
-## Search Panel
+## Data Structure Report & Findings
 
-Input:
+This page must contextualize itself based on the *current investigation* from the dashboard. There are no manual operations here.
 
-**Search Log Pattern**
+Display a report generated by the Trie for the current investigation:
 
-Example:
+- **Traversal Process:** Explain how the Trie was navigated for the queried keywords.
+- **Key Findings:** What the Trie specifically uncovered (e.g., "Matched 'database' and 'timeout' across 342 logs in 1.7ms.").
 
-```text
-database
-```
-
-Buttons:
-
-- Search
-- Prefix Search
-- Clear
-
-Display:
-
-- Search term
-- Matching terms
-- Number of matching logs
-- Search time
-- Nodes traversed
-
----
-
-## Search Results
-
-Display matching patterns:
-
-```text
-database
-database_timeout
-database_connection
-database_failed
-database_unavailable
-```
-
-Then show matching logs below.
+Note: Ensure the Trie visualization is scalable for large datasets (zoom/pan support) and driven by backend data.
 
 ---
 
@@ -690,32 +579,16 @@ The exact scoring formula should be displayed in a clean card and should be easy
 
 ---
 
-# 12. Heap Operations
+# 12. Heap Report & Findings
 
-Provide controls:
+This page must contextualize itself based on the *current investigation* from the dashboard. There are no manual operations here.
 
-- Insert Event
-- Extract Maximum
-- Build Heap
-- Get Top K
+Display a report generated by the Heap for the current investigation:
 
-Top-K control:
+- **Prioritization Process:** Explain how the heap sifted the logs to find the most critical events.
+- **Key Findings:** What the Heap specifically prioritized (e.g., "Elevated DB-01 unavailable to Priority 1 based on CRITICAL severity.").
 
-```text
-Top K Events: [10]
-
-[ Get Top Events ]
-```
-
-Display:
-
-```text
-1. CRITICAL — DB-01 unavailable
-2. CRITICAL — Connection failure
-3. ERROR    — API request failed
-4. ERROR    — Authentication failure
-...
-```
+Note: Ensure the Heap visualization is scalable for large datasets (zoom/pan support) and driven by backend data.
 
 ---
 
@@ -820,15 +693,22 @@ React + TypeScript Frontend
              │
              │ HTTP / REST
              ▼
-       C++ Backend
+     Node.js Backend (Orchestrator)
              │
-      ┌──────┼──────┐
-      ▼      ▼      ▼
-   B+ Tree  Trie   Heap
+             ├──► Ollama (Local LLM)
+             │    1. Tool Selection (Router)
+             │    2. Final Summary (Post-processor)
              │
-             ▼
-        Local LLM
+             └──► C++ Engine (Executable via child_process)
+                    │   Input: Temp log file + parameters
+                    │   Output: JSON metrics + evidence
+                    │
+                    ├──► B+ Tree
+                    ├──► Trie
+                    └──► Heap
 ```
+
+*Note on Architecture:* The LLM acts as an Agent. It is first invoked to determine the query parameters and which DSAs (Tools) to run. Node.js then passes a temporary file of the logs to the C++ binary. C++ handles all algorithmic heavy lifting and returns JSON to Node.js via stdout. Node.js then uses the LLM again to summarize the C++ output before sending the final package to React. In the UI, any DSAs that the LLM chose not to invoke will be visually grayed out.
 
 The frontend should never contain the actual ADS implementation.
 
