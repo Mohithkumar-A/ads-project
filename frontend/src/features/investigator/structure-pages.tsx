@@ -17,9 +17,9 @@ export function BPlusPage() {
 
   const used = result?.tool_call?.bplus?.used ?? false;
   const range =
-    used && result?.tool_call?.bplus
-      ? [result.tool_call.bplus.start_time, result.tool_call.bplus.end_time]
-      : ["—", "—"];
+    used && result?.tool_call?.bplus?.ranges && result.tool_call.bplus.ranges.length > 0
+      ? result.tool_call.bplus.ranges.map(r => `${r.start_time}-${r.end_time}`)
+      : ["—"];
   const metrics = result?.dsa_metrics?.find((m) => m.name === "B+ Tree");
   const evidence = used && result?.evidence ? result.evidence : [];
 

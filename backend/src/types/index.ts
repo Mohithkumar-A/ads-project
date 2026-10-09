@@ -24,8 +24,10 @@ export interface LogRecord {
 /** Parameters the LLM extracts for B+ Tree range search */
 export interface BPlusParams {
   used: boolean;
-  start_time: string;
-  end_time: string;
+  ranges: Array<{
+    start_time: string;
+    end_time: string;
+  }>;
 }
 
 /** Parameters the LLM extracts for Trie keyword search */
@@ -38,6 +40,7 @@ export interface TrieParams {
 export interface HeapParams {
   used: boolean;
   top_k: number;
+  tags: Record<string, number>;
 }
 
 /** The complete tool-call schema that Phase 1 LLM returns */

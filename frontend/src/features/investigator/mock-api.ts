@@ -78,8 +78,10 @@ export function parseLogs(text: string): LogRecord[] {
 
 export interface BPlusParams {
   used: boolean;
-  start_time: string;
-  end_time: string;
+  ranges: Array<{
+    start_time: string;
+    end_time: string;
+  }>;
 }
 
 export interface TrieParams {
@@ -90,6 +92,7 @@ export interface TrieParams {
 export interface HeapParams {
   used: boolean;
   top_k: number;
+  tags: Record<string, number>;
 }
 
 export interface AgentToolCall {
@@ -109,6 +112,8 @@ export interface DSAMetrics {
 export type InvestigationResult = {
   question: string;
   summary: string;
+  root_cause: string;
+  possible_fix: string;
   key_findings: string[];
   evidence: LogRecord[];
   dsa_metrics: DSAMetrics[];
@@ -152,6 +157,8 @@ export const mockApi = {
         tool_call: data.tool_call,
         evidence: data.evidence || [],
         summary: data.summary || "No summary provided.",
+        root_cause: data.root_cause || "Not identified.",
+        possible_fix: data.possible_fix || "No fix suggested.",
         key_findings: data.key_findings || [],
         dsa_metrics: data.dsa_metrics || [],
         processing_time_ms: data.processing_time_ms || 0,

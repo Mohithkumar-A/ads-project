@@ -264,9 +264,7 @@ export function TreeGraphic({
 
   // ── Dynamic B+ Tree ──────────────────────────────────────
   if (type === "bplus") {
-    const hasData = range.length === 2 && range[0] !== "—";
-    const startMin = hasData && range[0] ? range[0].slice(0, 5) : "";
-    const endMin = hasData && range[1] ? range[1].slice(0, 5) : "";
+    const hasData = range[0] !== "—";
 
     const leafTimes: string[] = [];
     if (hasData && events.length > 0) {
@@ -274,56 +272,87 @@ export function TreeGraphic({
       const sortedEvents = [...events].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
       const seen = new Set<string>();
       for (const e of sortedEvents) {
-        const t = e.timestamp.slice(11, 16);
+        const t = e.timestamp.slice(11, 19); // Use full HH:MM:SS
         if (!seen.has(t)) { seen.add(t); leafTimes.push(t); }
-        if (leafTimes.length >= 6) break;
       }
     }
     
     const validLeaves = leafTimes.length;
     
-    // We only need the root if we have data
-    const nodes = hasData ? [`${startMin} | ${endMin}`] : [];
-    if (hasData) {
-      // Internal nodes as proper boundary markers
-      nodes.push(leafTimes[0] ? `≤ ${leafTimes[Math.min(1, validLeaves - 1)]}` : "");
-      nodes.push(leafTimes[2] ? `≤ ${leafTimes[Math.min(3, validLeaves - 1)]}` : "");
-      nodes.push(leafTimes[4] ? `≤ ${leafTimes[Math.min(5, validLeaves - 1)]}` : "");
-      
-      for (let i = 0; i < 6; i++) {
-        nodes.push(i < validLeaves ? (leafTimes[i] || "") : "");
-      }
+    const nodes: string[] = [];
+    const positions: [number, number][] = [];
+    const edges: [number, number][] = [];
+    const nodeActive: boolean[] = [];
+
+    if (hasData && validLeaves > 0) {
+        // Build leaves
+        const leafWidth = 110;
+        const totalWidth = Math.max(710, validLeaves * leafWidth);
+        const startX = 60;
+        
+        const leafY = 185;
+        const innerY = 110;
+        const rootY = 35;
+
+        // Number of inner nodes (each has up to 3 children)
+        const innerCount = Math.ceil(validLeaves / 3);
+        
+        // Root
+        nodes.push(`Time Range`);
+        positions.push([totalWidth / 2, rootY]);
+        nodeActive.push(active);
+        const rootIdx = 0;
+
+        // Inner nodes
+        const innerStartIndex = nodes.length;
+        for (let i = 0; i < innerCount; i++) {
+            const firstChildIdx = i * 3;
+            const lastChildIdx = Math.min((i + 1) * 3 - 1, validLeaves - 1);
+            nodes.push(`≤ ${leafTimes[lastChildIdx]}`);
+            
+            // center above its children
+            const childXStart = startX + firstChildIdx * leafWidth;
+            const childXEnd = startX + lastChildIdx * leafWidth;
+            positions.push([(childXStart + childXEnd) / 2, innerY]);
+            nodeActive.push(active);
+            edges.push([rootIdx, nodes.length - 1]);
+        }
+
+        // Leaves
+        for (let i = 0; i < validLeaves; i++) {
+            nodes.push(leafTimes[i]!);
+            positions.push([startX + i * leafWidth, leafY]);
+            nodeActive.push(active);
+            
+            const parentInnerIdx = innerStartIndex + Math.floor(i / 3);
+            edges.push([parentInnerIdx, nodes.length - 1]);
+        }
     }
 
-    const positions: [number, number][] = [
-      [300, 35], [110, 110], [300, 110], [490, 110],
-      [30, 185], [130, 185], [230, 185], [330, 185], [430, 185], [530, 185],
-    ];
-    const edges: [number, number][] = [
-      [0, 1], [0, 2], [0, 3], [1, 4], [1, 5], [2, 6], [2, 7], [3, 8], [3, 9],
-    ];
+    const svgWidth = Math.max(710, validLeaves * 110 + 100);
 
     return renderSvg(
       <>
         {edges.map(([a, b]) => {
           if (!nodes[a] || !nodes[b] || !positions[a] || !positions[b]) return null;
           const pA = positions[a]!; const pB = positions[b]!;
-          return <path key={`${a}-${b}`} d={`M ${pA[0]} ${pA[1] + 16} L ${pB[0]} ${pB[1] - 16}`}
+          return <path key={`${a}-${b}`} d={`M \${pA[0]} \${pA[1] + 16} L \${pB[0]} \${pB[1] - 16}`}
             className={active ? "tree-edge edge-active" : "tree-edge"} />;
         })}
         {nodes.map((node, i) => {
           if (!node || !positions[i]) return null;
           const [x, y] = positions[i]!;
+          const isActive = nodeActive[i];
           return (
-            <g key={i} className={`tree-node ${active ? "node-active" : ""}`}>
-              <rect x={x - (i === 0 ? 65 : 44)} y={y - 17} width={i === 0 ? 130 : 88} height={34} rx="5" />
-              <text x={x} y={y + 4} textAnchor="middle">{node}</text>
+            <g key={i} className={`tree-node \${isActive ? "node-active" : ""}`}>
+              <rect x={x - 50} y={y - 17} width={100} height={34} rx="5" />
+              <text x={x} y={y + 4} textAnchor="middle" fontSize="12">{node}</text>
             </g>
           );
         })}
-        {validLeaves > 1 && <path d={`M30 218 H${30 + ((validLeaves - 1) * 100)}`} className="tree-leaf-link" />}
+        {validLeaves > 1 && <path d={`M 60 218 H\${60 + ((validLeaves - 1) * 110)}`} className="tree-leaf-link" />}
       </>,
-      "-50 -50 710 335"
+      `-50 -50 \${svgWidth} 335`
     );
   }
 

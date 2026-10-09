@@ -28,31 +28,32 @@ export async function determineSearchParameters(
       body: JSON.stringify({
         model: OLLAMA_MODEL,
         prompt: `You are a log investigation routing agent.
-Your job is to parse a user query and output a strict JSON routing configuration.
+Your job is to parse a user query and output a strict JSON routing configuration for our C++ data structures.
 
 RULES FOR DATA STRUCTURES:
 1. B+ Tree ('bplus'):
-   - Use ONLY IF the user explicitly asks for a strict time window (e.g., "between 14:00 and 15:00", "after 09:15", "from 10:00 to 11:30").
-   - If they ask for "today" or don't mention times, set "used": false.
-   - If used, extract times into "HH:MM:SS" format.
+   - Use ONLY IF the user explicitly asks for a strict time window (e.g., "between 14:00 and 15:00", "after 09:15").
+   - If they ask for generic times like "today" or "24x7", set "used": false.
+   - If used, output an array of "ranges" with "start_time" and "end_time" in "HH:MM:SS" format.
 
 2. Trie ('trie'):
-   - Use ONLY IF the user is looking for specific concepts, keywords, or services (e.g., "authentication", "database", "timeout", "errors").
+   - Use ONLY IF the user is looking for specific concepts, keywords, or services (e.g., "database", "stripe").
    - Extract those concepts into the "keywords" array as simple lowercase strings.
-   - If the user asks a completely generic question like "what happened?", set "used": false and let the Heap rank everything.
 
 3. Priority Heap ('heap'):
-   - ALMOST ALWAYS set "used": true to rank the resulting logs by severity.
-   - Set "top_k" to 10 by default, unless the user explicitly asks for a different number (e.g., "top 5 errors").
+   - ALMOST ALWAYS set "used": true to rank the resulting logs.
+   - You must select relevant error tags from this list: [timeout, auth, database, connection, panic, crash, deadlock, latency, 500, 404].
+   - Assign a priority score to each chosen tag based on how relevant it is to the user's query (e.g., if they ask about databases, assign {"database": 1000, "timeout": 500}).
+   - Set "top_k" to 10 by default.
 
-User query: "${prompt}"
+User query: "\${prompt}"
 
 Output MUST be valid JSON exactly matching this structure. 
 Example (when time and keywords are specified):
-{"bplus":{"used":true,"start_time":"14:00:00","end_time":"15:00:00"},"trie":{"used":true,"keywords":["database","timeout"]},"heap":{"used":true,"top_k":10}}
+{"bplus":{"used":true,"ranges":[{"start_time":"14:00:00","end_time":"15:00:00"}]},"trie":{"used":true,"keywords":["database"]},"heap":{"used":true,"top_k":10,"tags":{"database":1000,"timeout":500}}}
 
-Example (when only keywords are specified):
-{"bplus":{"used":false,"start_time":"00:00:00","end_time":"23:59:59"},"trie":{"used":true,"keywords":["login","failed"]},"heap":{"used":true,"top_k":5}}`,
+Example (generic search):
+{"bplus":{"used":false,"ranges":[]},"trie":{"used":false,"keywords":[]},"heap":{"used":true,"top_k":5,"tags":{"auth":1000,"404":800}}}`,
         format: "json",
         stream: false,
       }),
@@ -80,6 +81,8 @@ Example (when only keywords are specified):
 
 export interface SynthesisResult {
   summary: string;
+  root_cause: string;
+  possible_fix: string;
   key_findings: string[];
 }
 
@@ -93,19 +96,24 @@ export async function generateSummary(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: OLLAMA_MODEL,
-        prompt: `You are an expert DevOps Incident Reporter.
-The user asked: "${prompt}"
+        prompt: `You are an expert Senior DevOps Engineer analyzing an incident.
+The user asked: "\${prompt}"
 
-The C++ data structures have isolated the following high-priority log events (in JSON format):
-${evidenceJson}
+The C++ data structures have isolated the Top K most critical log events (in JSON format):
+\${evidenceJson}
 
 RULES:
 1. If the log events array is empty "[]", respond strictly with:
-   {"summary": "No logs matched your search criteria.", "key_findings": []}
-2. Otherwise, write a clear, concise 2-3 sentence summary explaining what happened based ONLY on the provided logs.
-3. Provide a list of key findings (e.g., "Authentication service crashed at 12:01:22 on AUTH-01").
+   {"summary": "No logs matched your search criteria.", "root_cause": "N/A", "possible_fix": "N/A", "key_findings": []}
+2. Otherwise, synthesize a highly structured incident report. Output MUST be valid JSON exactly matching this structure:
+{
+  "summary": "Brief 1-sentence overview of the incident.",
+  "root_cause": "Detailed technical explanation of what caused the issue based on the logs.",
+  "possible_fix": "Actionable step to resolve the issue.",
+  "key_findings": ["Bullet point 1", "Bullet point 2"]
+}
 
-Output MUST be strictly JSON format with keys 'summary' (string) and 'key_findings' (array of strings). Do NOT include markdown blocks.`,
+Output MUST be strictly JSON format. Do NOT include markdown blocks.`,
         format: "json",
         stream: false,
       }),

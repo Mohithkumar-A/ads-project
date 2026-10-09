@@ -1,109 +1,44 @@
-# Node.js Orchestrator Implementation Plan
+# ADS Investigation Engine - V2 Implementation Plan (Final)
 
-This document details the step-by-step technical implementation plan for the **Node.js backend** (Module 2). The backend acts as the bridge between the React frontend, the local Ollama LLM, and the C++ data structures engine.
+This document outlines the architectural refactor for the **Error Log Investigation Pipeline**. The primary goal is to maximize memory efficiency, enable complex multi-range time queries, and preserve LLM processing time by strictly relying on Data Structures for filtering and ranking.
 
----
+## Phase 0: LLM Pre-Flight & Dynamic Tag Scoring
+Before the C++ engine runs, the LLM acts as the master router and classifier.
+1. The LLM's system prompt contains a predefined list of standard cloud infrastructure tags (Vercel, Supabase, Postgres, auth, timeout, etc.).
+2. The LLM reads the user's intent, selects the most relevant tags, and dynamically assigns priority scores to them based on the context of the query.
+3. It passes these tags and scores to the C++ engine (e.g., `--heap-tags "timeout:1000,auth:500"`).
 
-## 1. Project Initialization & Tooling
-The backend will be a robust, strictly typed Node.js application.
-- **Runtime:** Node.js
-- **Framework:** Express.js
-- **Language:** TypeScript
-- **Key Dependencies:** 
-  - `express` (Routing)
-  - `cors` (Cross-origin resource sharing for the frontend)
-  - `multer` (Handling raw log file uploads)
-  - `uuid` (Generating unique temporary file names)
+## Phase 1: Ingestion Filter & Optimized Trie
+We heavily restrict what enters the data structures to keep memory footprints microscopic.
+1. **Dynamic Ingestion (No Cap)**: The engine reads the entire log file to ensure no data is missed, but the C++ engine immediately drops any logs that are not categorized as errors (dropping `[INFO]`, `[DEBUG]`, etc.).
+2. **Optimized Trie (Multiple Keywords)**: The Trie only indexes stripped log messages of the confirmed errors. It supports **multiple keyword searches** simultaneously (e.g., searching for "database" AND "stripe" in one pass).
 
----
+## Phase 2: B+ Tree - Seconds Precision & Multiple Ranges
+The B+ Tree only receives confirmed error logs and handles complex time windows.
+1. **Seconds Precision**: All timestamps ingested and stored use strict seconds precision (`YYYY-MM-DD HH:MM:SS`).
+2. **LLM Output Schema**: The LLM outputs an array of `ranges`.
+3. **C++ Execution**: Parse the `--bplus-ranges` argument, execute multiple $O(\log N)$ `bpt.searchRange()` queries, and merge results using `std::unordered_map` to prevent duplicates.
 
-## 2. Directory Structure
+## Phase 3: Dynamic Max-Heap
+The Heap ranks the filtered subset using the scores assigned dynamically by the LLM.
+1. **Heap Execution (`main.cpp`)**: Calculates the `priorityScore` strictly using the LLM's weighted values. Ties are broken by chronological recency.
+2. **Top K Output**: The Heap mathematically isolates the Top K most important errors and passes them down the pipeline.
 
-We will adopt a layered architecture to keep routing, business logic, and external processes strictly separated.
+## Phase 4: Full Visualizations with Path Highlighting
+Instead of sending complex algorithmic traces, we will render the full Data Structures and highlight the relevant search paths.
+1. **B+ Tree UI**: The SVG canvas will dynamically expand to fit *all* ingested timestamps. The specific nodes that fall within the user's searched time range will be distinctly highlighted.
+2. **Trie UI**: The full prefix tree will be rendered, with the specific characters of the searched keywords highlighted in a bright active color.
+3. **Heap UI**: The full Top K binary heap will be rendered, allowing the user to visually trace how the highest-scored errors bubbled to the top.
 
-```text
-backend/
-├── src/
-│   ├── index.ts              # Express application entry point & middleware config
-│   ├── routes/
-│   │   └── investigate.ts    # Defines the POST /api/investigate endpoint
-│   ├── services/
-│   │   ├── llm.ts            # API wrappers for Ollama (Phase 1 & Phase 2)
-│   │   └── engine.ts         # child_process logic to execute the C++ binary
-│   └── utils/
-│       └── fileManager.ts    # Helpers for writing/deleting temp log files
-├── temp/                     # Ephemeral storage for incoming logs (git-ignored)
-├── package.json
-└── tsconfig.json
-```
-
----
-
-## 3. Step-by-Step Implementation
-
-### Step 1: Server Setup & Routing
-1. Initialize the Express server in `src/index.ts`.
-2. Configure `cors` to allow requests from the Vite frontend (port `5173`).
-3. Setup global JSON parsing and URL encoding middleware.
-4. Mount the primary router: `app.use('/api', investigateRouter)`.
-
-### Step 2: File Handling (`utils/fileManager.ts`)
-1. Implement a system to handle incoming logs. If the frontend sends a file, `multer` will catch it. If the frontend sends copy-pasted text, we must manually write it to a file.
-2. Store the file in `backend/temp/[uuid].log`.
-3. Provide an asynchronous `cleanupTempFile(filepath)` function to securely delete files after processing to prevent memory leaks.
-
-### Step 3: LLM Phase 1 - Tool Routing (`services/llm.ts`)
-1. Implement `determineSearchParameters(prompt: string)`.
-2. Make a `fetch` request to the local Ollama instance (`http://127.0.0.1:11434/api/generate`).
-3. Instruct Ollama to use `format: "json"`.
-4. Parse the output into a strict TypeScript interface representing the C++ arguments (e.g., `{ bplus: { start: "...", end: "..." }, trie: { keywords: [...] } }`).
-
-### Step 4: C++ Engine Orchestration (`services/engine.ts`)
-1. Implement `executeDSA(filePath: string, params: AgentParams)`.
-2. Map the JSON parameters into a CLI argument string.
-3. Use Node's native `child_process.spawn()` to execute `../dsa/engine.out`.
-4. Attach listeners to `stdout` and `stderr`.
-5. Buffer the incoming `stdout` stream until the process exits (`close` event).
-6. Run `JSON.parse(buffer)` to convert the C++ output back into a JavaScript object.
-
-### Step 5: LLM Phase 2 - Synthesis (`services/llm.ts`)
-1. Implement `generateSummary(prompt: string, cppEvidence: any)`.
-2. Construct a prompt containing both the user's original question and the raw log evidence returned by the C++ engine.
-3. Make a standard text-generation request to Ollama.
-
-### Step 6: The Pipeline Controller (`routes/investigate.ts`)
-Tie it all together in the main route handler:
-```typescript
-router.post('/investigate', upload.single('logFile'), async (req, res) => {
-    // 1. Save File
-    const filePath = await saveTempFile(req);
-    
-    try {
-        // 2. Ask LLM what to search
-        const params = await determineSearchParameters(req.body.prompt);
-        
-        // 3. Run C++ Engine
-        const cppResult = await executeDSA(filePath, params);
-        
-        // 4. Ask LLM to summarize results
-        const summary = await generateSummary(req.body.prompt, cppResult.evidence);
-        
-        // 5. Send payload back to Frontend
-        res.json({
-            summary,
-            metrics: cppResult.metrics,
-            evidence: cppResult.evidence
-        });
-    } finally {
-        // 6. Cleanup
-        await cleanupTempFile(filePath);
-    }
-});
-```
-
----
-
-## 4. Error Handling & Edge Cases
-- **C++ Crashes:** If `spawn` exits with a non-zero status code (e.g. segmentation fault in C++), the Promise will reject and Express will return a `500 Internal Server Error`.
-- **LLM Hallucinations:** Wrap `JSON.parse` around Phase 1 in a `try/catch`. If the LLM returns invalid JSON, implement a fallback default (e.g., tell the engine to just return the Top-K Heap events).
-- **Orphaned Files:** The `finally` block in the router ensures the temporary file is deleted even if the LLM or C++ engine throws an exception.
+## Phase 5: LLM Error Summarization & Fix Synthesis
+The final phase leverages the LLM to act as a Senior DevOps Engineer.
+1. The Heap outputs the highly curated Top K logs **including their full, unstripped message strings** and metrics reports.
+2. The LLM reads this complete context to prevent hallucinations and generates a structured JSON response:
+   ```json
+   {
+     "summary": "Database connection pool exhausted during peak hours.",
+     "root_cause": "The auth microservice opened too many idle connections to DB-01.",
+     "possible_fix": "Increase the max_connections limit in PostgreSQL and implement a timeout for idle connections.",
+     "key_findings": ["[ERROR] DB-01 Connection timeout"]
+   }
+   ```

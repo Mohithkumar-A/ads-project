@@ -26,9 +26,11 @@ const ENGINE_AVAILABLE = process.env.ENGINE_AVAILABLE === "true";
 function buildArgs(filePath: string, params: AgentToolCall): string[] {
   const args: string[] = ["--file", filePath];
 
-  if (params.bplus.used) {
-    args.push("--bplus-start", params.bplus.start_time);
-    args.push("--bplus-end", params.bplus.end_time);
+  if (params.bplus.used && params.bplus.ranges && params.bplus.ranges.length > 0) {
+    const rangeString = params.bplus.ranges
+      .map(r => `${r.start_time}-${r.end_time}`)
+      .join(",");
+    args.push("--bplus-ranges", rangeString);
   }
 
   if (params.trie.used && params.trie.keywords.length > 0) {
@@ -37,6 +39,12 @@ function buildArgs(filePath: string, params: AgentToolCall): string[] {
 
   if (params.heap.used) {
     args.push("--heap-topk", String(params.heap.top_k));
+    if (params.heap.tags && Object.keys(params.heap.tags).length > 0) {
+      const tagString = Object.entries(params.heap.tags)
+        .map(([tag, score]) => `${tag}:${score}`)
+        .join(",");
+      args.push("--heap-tags", tagString);
+    }
   }
 
   return args;

@@ -33,24 +33,23 @@ std::string escapeJSONString(const std::string& s) {
 int main(int argc, char* argv[]) {
     std::string filePath;
     bool useBPlus = false;
-    std::string bplusStart, bplusEnd;
+    std::string bplusRangesRaw;
     
     bool useTrie = false;
     std::vector<std::string> trieKeys;
     
     bool useHeap = false;
     int heapTopK = 10;
+    std::string heapTagsRaw;
     
     // Parse arguments
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
         if (arg == "--file" && i + 1 < argc) {
             filePath = argv[++i];
-        } else if (arg == "--bplus-start" && i + 1 < argc) {
+        } else if (arg == "--bplus-ranges" && i + 1 < argc) {
             useBPlus = true;
-            bplusStart = argv[++i];
-        } else if (arg == "--bplus-end" && i + 1 < argc) {
-            bplusEnd = argv[++i];
+            bplusRangesRaw = argv[++i];
         } else if (arg == "--trie-keys" && i + 1 < argc) {
             useTrie = true;
             std::string keysRaw = argv[++i];
@@ -62,6 +61,8 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--heap-topk" && i + 1 < argc) {
             useHeap = true;
             heapTopK = std::stoi(argv[++i]);
+        } else if (arg == "--heap-tags" && i + 1 < argc) {
+            heapTagsRaw = argv[++i];
         }
     }
     
@@ -97,6 +98,11 @@ int main(int argc, char* argv[]) {
         if (sevRaw.size() > 2) {
             sevRaw = sevRaw.substr(1, sevRaw.size() - 2); // strip brackets
         }
+
+        // DROP NON-ERRORS IMMEDIATELY
+        if (sevRaw != "ERROR" && sevRaw != "CRITICAL" && sevRaw != "FATAL") {
+            continue;
+        }
         
         LogRecord rec;
         rec.id = idCounter++;
@@ -112,7 +118,8 @@ int main(int argc, char* argv[]) {
         rec.frequency = serverFreq[server];
         rec.recency = (idCounter % 10) + 1; // dummy recency based on recency order
         
-        rec.priorityScore = getSeverityWeight(rec.severity) + rec.frequency + rec.recency;
+        // Base priority score from severity (ties broken by recency)
+        rec.priorityScore = getSeverityWeight(rec.severity) * 10 + rec.recency;
         allLogs.push_back(rec);
     }
     
@@ -129,17 +136,39 @@ int main(int argc, char* argv[]) {
     int bplusNodes = 0, trieNodes = 0, heapNodes = 0;
     
     // Pipeline Step 1: B+ Tree
-    if (useBPlus) {
+    if (useBPlus && !bplusRangesRaw.empty()) {
         auto start = high_resolution_clock::now();
         BPlusTree bpt;
         for (LogRecord* rec : currentEvidence) {
             bpt.insert(rec);
         }
-        // If they provided full dates, use them. Otherwise prepend 2026-10-08 if they just provided time
-        std::string bStart = (bplusStart.length() <= 8) ? ("2026-10-08 " + bplusStart) : bplusStart;
-        std::string bEnd = (bplusEnd.length() <= 8) ? ("2026-10-08 " + bplusEnd) : bplusEnd;
         
-        currentEvidence = bpt.searchRange(bStart, bEnd);
+        std::unordered_map<int, LogRecord*> uniqueLogs;
+        
+        // Parse ranges: "08:00:00-09:00:00,12:00:00-13:00:00"
+        std::stringstream ssRanges(bplusRangesRaw);
+        std::string rangeToken;
+        while (std::getline(ssRanges, rangeToken, ',')) {
+            size_t hyphenPos = rangeToken.find('-');
+            if (hyphenPos != std::string::npos) {
+                std::string bStart = rangeToken.substr(0, hyphenPos);
+                std::string bEnd = rangeToken.substr(hyphenPos + 1);
+                
+                bStart = (bStart.length() <= 8) ? ("2026-10-08 " + bStart) : bStart;
+                bEnd = (bEnd.length() <= 8) ? ("2026-10-08 " + bEnd) : bEnd;
+                
+                auto results = bpt.searchRange(bStart, bEnd);
+                for (LogRecord* rec : results) {
+                    uniqueLogs[rec->id] = rec;
+                }
+            }
+        }
+        
+        currentEvidence.clear();
+        for (auto& pair : uniqueLogs) {
+            currentEvidence.push_back(pair.second);
+        }
+        
         auto end = high_resolution_clock::now();
         bplusTime = duration<double, std::milli>(end - start).count();
         bplusNodes = bpt.getNodesAccessed();
@@ -180,8 +209,34 @@ int main(int argc, char* argv[]) {
     // Pipeline Step 3: Max Heap
     if (useHeap) {
         auto start = high_resolution_clock::now();
+        
+        // Parse heapTagsRaw into a map
+        std::unordered_map<std::string, int> tagsMap;
+        if (!heapTagsRaw.empty()) {
+            std::stringstream ss(heapTagsRaw);
+            std::string token;
+            while (std::getline(ss, token, ',')) {
+                size_t colonPos = token.find(':');
+                if (colonPos != std::string::npos) {
+                    std::string tag = token.substr(0, colonPos);
+                    int score = std::stoi(token.substr(colonPos + 1));
+                    tagsMap[tag] = score;
+                }
+            }
+        }
+        
         MaxHeap mh;
         for (LogRecord* rec : currentEvidence) {
+            // Apply dynamic scores based on message contents
+            std::string msgLower = rec->message;
+            std::transform(msgLower.begin(), msgLower.end(), msgLower.begin(), ::tolower);
+            for (const auto& tagPair : tagsMap) {
+                std::string tagLower = tagPair.first;
+                std::transform(tagLower.begin(), tagLower.end(), tagLower.begin(), ::tolower);
+                if (msgLower.find(tagLower) != std::string::npos || rec->service == tagPair.first) {
+                    rec->priorityScore += tagPair.second;
+                }
+            }
             mh.insert(rec);
         }
         

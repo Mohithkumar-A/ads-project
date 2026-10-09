@@ -407,8 +407,8 @@ export function Dashboard() {
             to="/bplustree"
             query={
               <>
-                {result?.tool_call.bplus.used
-                  ? `${result.tool_call.bplus.start_time} → ${result.tool_call.bplus.end_time}`
+                {result?.tool_call.bplus.used && result.tool_call.bplus.ranges && result.tool_call.bplus.ranges.length > 0
+                  ? result.tool_call.bplus.ranges.map(r => `${r.start_time} → ${r.end_time}`).join(", ")
                   : "—"}
               </>
             }
@@ -538,6 +538,15 @@ export function Dashboard() {
                 <AlertTriangle />
                 {result.summary}
               </h3>
+              <div style={{ marginTop: "16px" }}>
+                <div className="incident-label" style={{ color: "#ff6b6b" }}>ROOT CAUSE</div>
+                <p style={{ marginTop: "4px", fontSize: "14px", lineHeight: 1.5, color: "var(--muted)" }}>{result.root_cause}</p>
+              </div>
+
+              <div style={{ marginTop: "16px" }}>
+                <div className="incident-label" style={{ color: "#4ade80" }}>POSSIBLE FIX</div>
+                <p style={{ marginTop: "4px", fontSize: "14px", lineHeight: 1.5, color: "var(--muted)" }}>{result.possible_fix}</p>
+              </div>
               <div className="findings-title">Key findings</div>
               <ul className="findings-list">
                 {result.key_findings.map((f) => (
