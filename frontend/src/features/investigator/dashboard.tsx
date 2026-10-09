@@ -540,12 +540,12 @@ export function Dashboard() {
               </h3>
               <div style={{ marginTop: "16px" }}>
                 <div className="incident-label" style={{ color: "#ff6b6b" }}>ROOT CAUSE</div>
-                <p style={{ marginTop: "4px", fontSize: "14px", lineHeight: 1.5, color: "var(--muted)" }}>{result.root_cause}</p>
+                <p style={{ marginTop: "4px", fontSize: "14px", lineHeight: 1.5, color: "var(--muted-foreground)" }}>{result.root_cause}</p>
               </div>
 
               <div style={{ marginTop: "16px" }}>
                 <div className="incident-label" style={{ color: "#4ade80" }}>POSSIBLE FIX</div>
-                <p style={{ marginTop: "4px", fontSize: "14px", lineHeight: 1.5, color: "var(--muted)" }}>{result.possible_fix}</p>
+                <p style={{ marginTop: "4px", fontSize: "14px", lineHeight: 1.5, color: "var(--muted-foreground)" }}>{result.possible_fix}</p>
               </div>
               <div className="findings-title">Key findings</div>
               <ul className="findings-list">

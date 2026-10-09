@@ -18,7 +18,7 @@ import {
   cleanupTempFile,
   cleanupUpload,
 } from "../utils/fileManager";
-import { determineSearchParameters, generateSummary } from "../services/llm";
+import { determineSearchParameters, generateSummary, type SynthesisResult } from "../services/llm";
 import { executeDSA } from "../services/engine";
 import type { InvestigationResponse, ErrorResponse } from "../types";
 
@@ -116,15 +116,29 @@ router.post(
       );
 
       // ── 6. LLM Phase 2 — Synthesize summary ───────────────
-      console.log(`[Investigate] Phase 2: Generating summary...`);
-      const synthesis = await generateSummary(
-        prompt,
-        JSON.stringify(engineResult.evidence)
-      );
+      let synthesis: SynthesisResult;
+      
+      if (engineResult.evidence.length === 0) {
+        console.log(`[Investigate] Evidence is empty, skipping Phase 2...`);
+        synthesis = {
+          summary: "No logs matched your search criteria.",
+          root_cause: "N/A",
+          possible_fix: "N/A",
+          key_findings: ["No relevant evidence found in the logs."],
+        };
+      } else {
+        console.log(`[Investigate] Phase 2: Generating summary...`);
+        synthesis = await generateSummary(
+          prompt,
+          JSON.stringify(engineResult.evidence)
+        );
+      }
 
       // ── 7. Build final response ────────────────────────────
       const response: InvestigationResponse = {
         summary: synthesis.summary,
+        root_cause: synthesis.root_cause,
+        possible_fix: synthesis.possible_fix,
         key_findings: synthesis.key_findings,
         evidence: engineResult.evidence,
         dsa_metrics: engineResult.dsa_metrics,

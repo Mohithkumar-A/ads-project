@@ -10,6 +10,7 @@ import {
   SeverityBadge,
 } from "./components";
 import { useInvestigationStore } from "./store";
+import { parseLogs } from "./mock-api";
 
 export function BPlusPage() {
   const [store] = useInvestigationStore();
@@ -22,6 +23,10 @@ export function BPlusPage() {
       : ["—"];
   const metrics = result?.dsa_metrics?.find((m) => m.name === "B+ Tree");
   const evidence = used && result?.evidence ? result.evidence : [];
+  
+  // To visualize the full B+ Tree accurately, we pass all available logs,
+  // not just the Top K evidence returned by the pipeline.
+  const allLogs = parseLogs(store.text);
 
   return (
     <AppShell>
@@ -40,7 +45,12 @@ export function BPlusPage() {
             <span className="section-tag">SCALABLE · ZOOM/PAN SUPPORTED</span>
           </SectionHeading>
           <div className="visualization-body relative overflow-hidden cursor-move">
-            <TreeGraphic type="bplus" large active={used} range={range} events={evidence} />
+            {!used && result && (
+              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.4)", zIndex: 10 }}>
+                <p style={{ color: "var(--muted-foreground)", fontWeight: 500 }}>Bypassed by LLM (No time ranges requested)</p>
+              </div>
+            )}
+            <TreeGraphic type="bplus" large active={used} range={range} events={allLogs} />
           </div>
           <div className="visualization-legend">
             <span className="legend-key">
@@ -123,6 +133,11 @@ export function TriePage() {
             <span className="section-tag">SCALABLE · ZOOM/PAN SUPPORTED</span>
           </SectionHeading>
           <div className="visualization-body relative overflow-hidden cursor-move">
+            {!used && result && (
+              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.4)", zIndex: 10 }}>
+                <p style={{ color: "var(--muted-foreground)", fontWeight: 500 }}>Bypassed by LLM (No keywords requested)</p>
+              </div>
+            )}
             <TreeGraphic type="trie" large active={used} keywords={terms} />
           </div>
           <div className="visualization-legend">

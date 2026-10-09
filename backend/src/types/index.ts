@@ -76,6 +76,8 @@ export interface EngineResult {
 /** The final payload the frontend receives */
 export interface InvestigationResponse {
   summary: string;
+  root_cause: string;
+  possible_fix: string;
   key_findings: string[];
   evidence: LogRecord[];
   dsa_metrics: DSAMetrics[];

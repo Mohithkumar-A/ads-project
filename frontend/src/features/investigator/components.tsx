@@ -218,12 +218,8 @@ export function TreeGraphic({
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const scaleAmount = -e.deltaY * 0.002;
-    const newScale = Math.min(Math.max(0.5, transform.scale + scaleAmount), 4);
-    setTransform({ ...transform, scale: newScale });
-  };
+  const handleZoomIn = () => setTransform(prev => ({ ...prev, scale: Math.min(prev.scale + 0.2, 4) }));
+  const handleZoomOut = () => setTransform(prev => ({ ...prev, scale: Math.max(prev.scale - 0.2, 0.5) }));
 
   const handlePointerDown = (e: React.PointerEvent) => {
     setIsDragging(true);
@@ -242,22 +238,27 @@ export function TreeGraphic({
   };
 
   const renderSvg = (content: ReactNode, viewBox: string) => (
-    <div 
-      className="w-full h-full overflow-hidden touch-none"
-      onWheel={handleWheel}
+    <div
+      className="w-full h-full overflow-hidden touch-none relative"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
       style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
     >
-      <svg 
-        viewBox={viewBox} 
-        className={`tree-graphic ${large ? "tree-large" : ""}`} 
+      <div style={{ position: "absolute", right: "10px", bottom: "10px", display: "flex", gap: "5px", zIndex: 10 }}>
+        <button onPointerDown={e => { e.stopPropagation(); handleZoomOut(); }} style={{ background: "var(--background)", border: "1px solid var(--border)", width: "30px", height: "30px", borderRadius: "4px", color: "var(--foreground)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>-</button>
+        <button onPointerDown={e => { e.stopPropagation(); handleZoomIn(); }} style={{ background: "var(--background)", border: "1px solid var(--border)", width: "30px", height: "30px", borderRadius: "4px", color: "var(--foreground)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+      </div>
+      <svg
+        width="100%"
+        height="100%"
+        className={`tree-graphic ${large ? "tree-large" : ""}`}
         role="img"
-        style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`, transformOrigin: '0 0' }}
       >
-        {content}
+        <g style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`, transformOrigin: '0 0' }}>
+          {content}
+        </g>
       </svg>
     </div>
   );
@@ -276,57 +277,57 @@ export function TreeGraphic({
         if (!seen.has(t)) { seen.add(t); leafTimes.push(t); }
       }
     }
-    
+
     const validLeaves = leafTimes.length;
-    
+
     const nodes: string[] = [];
     const positions: [number, number][] = [];
     const edges: [number, number][] = [];
     const nodeActive: boolean[] = [];
 
     if (hasData && validLeaves > 0) {
-        // Build leaves
-        const leafWidth = 110;
-        const totalWidth = Math.max(710, validLeaves * leafWidth);
-        const startX = 60;
-        
-        const leafY = 185;
-        const innerY = 110;
-        const rootY = 35;
+      // Build leaves
+      const leafWidth = 110;
+      const totalWidth = Math.max(710, validLeaves * leafWidth);
+      const startX = 60;
 
-        // Number of inner nodes (each has up to 3 children)
-        const innerCount = Math.ceil(validLeaves / 3);
-        
-        // Root
-        nodes.push(`Time Range`);
-        positions.push([totalWidth / 2, rootY]);
+      const leafY = 185;
+      const innerY = 110;
+      const rootY = 35;
+
+      // Number of inner nodes (each has up to 3 children)
+      const innerCount = Math.ceil(validLeaves / 3);
+
+      // Root
+      nodes.push(`Time Range`);
+      positions.push([totalWidth / 2, rootY]);
+      nodeActive.push(active);
+      const rootIdx = 0;
+
+      // Inner nodes
+      const innerStartIndex = nodes.length;
+      for (let i = 0; i < innerCount; i++) {
+        const firstChildIdx = i * 3;
+        const lastChildIdx = Math.min((i + 1) * 3 - 1, validLeaves - 1);
+        nodes.push(`${leafTimes[lastChildIdx]}`);
+
+        // center above its children
+        const childXStart = startX + firstChildIdx * leafWidth;
+        const childXEnd = startX + lastChildIdx * leafWidth;
+        positions.push([(childXStart + childXEnd) / 2, innerY]);
         nodeActive.push(active);
-        const rootIdx = 0;
+        edges.push([rootIdx, nodes.length - 1]);
+      }
 
-        // Inner nodes
-        const innerStartIndex = nodes.length;
-        for (let i = 0; i < innerCount; i++) {
-            const firstChildIdx = i * 3;
-            const lastChildIdx = Math.min((i + 1) * 3 - 1, validLeaves - 1);
-            nodes.push(`≤ ${leafTimes[lastChildIdx]}`);
-            
-            // center above its children
-            const childXStart = startX + firstChildIdx * leafWidth;
-            const childXEnd = startX + lastChildIdx * leafWidth;
-            positions.push([(childXStart + childXEnd) / 2, innerY]);
-            nodeActive.push(active);
-            edges.push([rootIdx, nodes.length - 1]);
-        }
+      // Leaves
+      for (let i = 0; i < validLeaves; i++) {
+        nodes.push(leafTimes[i]!);
+        positions.push([startX + i * leafWidth, leafY]);
+        nodeActive.push(active);
 
-        // Leaves
-        for (let i = 0; i < validLeaves; i++) {
-            nodes.push(leafTimes[i]!);
-            positions.push([startX + i * leafWidth, leafY]);
-            nodeActive.push(active);
-            
-            const parentInnerIdx = innerStartIndex + Math.floor(i / 3);
-            edges.push([parentInnerIdx, nodes.length - 1]);
-        }
+        const parentInnerIdx = innerStartIndex + Math.floor(i / 3);
+        edges.push([parentInnerIdx, nodes.length - 1]);
+      }
     }
 
     const svgWidth = Math.max(710, validLeaves * 110 + 100);
@@ -336,7 +337,7 @@ export function TreeGraphic({
         {edges.map(([a, b]) => {
           if (!nodes[a] || !nodes[b] || !positions[a] || !positions[b]) return null;
           const pA = positions[a]!; const pB = positions[b]!;
-          return <path key={`${a}-${b}`} d={`M \${pA[0]} \${pA[1] + 16} L \${pB[0]} \${pB[1] - 16}`}
+          return <path key={`${a}-${b}`} d={`M ${pA[0]} ${pA[1] + 16} L ${pB[0]} ${pB[1] - 16}`}
             className={active ? "tree-edge edge-active" : "tree-edge"} />;
         })}
         {nodes.map((node, i) => {
@@ -344,7 +345,7 @@ export function TreeGraphic({
           const [x, y] = positions[i]!;
           const isActive = nodeActive[i];
           return (
-            <g key={i} className={`tree-node \${isActive ? "node-active" : ""}`}>
+            <g key={i} className={`tree-node ${isActive ? "node-active" : ""}`}>
               <rect x={x - 50} y={y - 17} width={100} height={34} rx="5" />
               <text x={x} y={y + 4} textAnchor="middle" fontSize="12">{node}</text>
             </g>
@@ -373,23 +374,23 @@ export function TreeGraphic({
 
       kws.forEach((kw, kwIdx) => {
         if (!kw) return;
-        
+
         let parentIdx = 0; // ROOT
         const currentX = startXs[kwIdx] ?? 300;
-        
+
         // Break into: char 1, char 2, remainder (creates the prefix depth effect)
         const parts = [
           kw.slice(0, 1),
           kw.slice(1, 2),
           kw.slice(2)
         ].filter(Boolean);
-        
+
         parts.forEach((part, depth) => {
-           nodes.push(part);
-           const myIdx = nodes.length - 1;
-           positions.push([currentX, 95 + (depth * 50)]);
-           edges.push([parentIdx, myIdx]);
-           parentIdx = myIdx;
+          nodes.push(part);
+          const myIdx = nodes.length - 1;
+          positions.push([currentX, 95 + (depth * 50)]);
+          edges.push([parentIdx, myIdx]);
+          parentIdx = myIdx;
         });
       });
     }
@@ -421,7 +422,7 @@ export function TreeGraphic({
   const heapItems = events; // Render all returned events
   const hasHeapData = heapItems.length > 0;
   const nodeCount = hasHeapData ? heapItems.length : 0;
-  
+
   const positions: [number, number][] = [];
   const edges: [number, number][] = [];
 
@@ -430,12 +431,12 @@ export function TreeGraphic({
       const level = Math.floor(Math.log2(i + 1));
       const positionInLevel = i - (Math.pow(2, level) - 1);
       const levelWidth = Math.pow(2, level);
-      
+
       const x = 300 + (positionInLevel - (levelWidth - 1) / 2) * (500 / levelWidth);
       const y = 35 + level * 85;
-      
+
       positions.push([x, y]);
-      
+
       if (i > 0) {
         edges.push([Math.floor((i - 1) / 2), i]);
       }
