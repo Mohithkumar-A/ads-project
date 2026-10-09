@@ -214,32 +214,86 @@ export function TreeGraphic({
   range?: string[];
   keywords?: string[];
 }) {
+  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const scaleAmount = -e.deltaY * 0.002;
+    const newScale = Math.min(Math.max(0.5, transform.scale + scaleAmount), 4);
+    setTransform({ ...transform, scale: newScale });
+  };
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - transform.x, y: e.clientY - transform.y });
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging) return;
+    setTransform({ ...transform, x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    setIsDragging(false);
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
+  const renderSvg = (content: ReactNode, viewBox: string) => (
+    <div 
+      className="w-full h-full overflow-hidden touch-none"
+      onWheel={handleWheel}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+    >
+      <svg 
+        viewBox={viewBox} 
+        className={`tree-graphic ${large ? "tree-large" : ""}`} 
+        role="img"
+        style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`, transformOrigin: '0 0' }}
+      >
+        {content}
+      </svg>
+    </div>
+  );
+
   // ── Dynamic B+ Tree ──────────────────────────────────────
   if (type === "bplus") {
     const hasData = range.length === 2 && range[0] !== "—";
-    const startMin = hasData && range[0] ? range[0].slice(0, 5) : "—";
-    const endMin = hasData && range[1] ? range[1].slice(0, 5) : "—";
+    const startMin = hasData && range[0] ? range[0].slice(0, 5) : "";
+    const endMin = hasData && range[1] ? range[1].slice(0, 5) : "";
 
-    // Build meaningful intermediate nodes from the evidence timestamps
     const leafTimes: string[] = [];
     if (hasData && events.length > 0) {
+      // Sort chronologically to satisfy B+ tree properties
+      const sortedEvents = [...events].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
       const seen = new Set<string>();
-      for (const e of events) {
+      for (const e of sortedEvents) {
         const t = e.timestamp.slice(11, 16);
         if (!seen.has(t)) { seen.add(t); leafTimes.push(t); }
         if (leafTimes.length >= 6) break;
       }
     }
-    // Pad to 6 leaves if needed
-    while (leafTimes.length < 6) leafTimes.push("—");
-
-    const nodes = [
-      `${startMin} | ${endMin}`,         // root
-      leafTimes[0],                        // internal left
-      leafTimes[Math.floor(leafTimes.length / 2)], // internal mid
-      leafTimes[leafTimes.length - 1],    // internal right
-      ...leafTimes,                        // leaves
-    ];
+    
+    const validLeaves = leafTimes.length;
+    
+    // We only need the root if we have data
+    const nodes = hasData ? [`${startMin} | ${endMin}`] : [];
+    if (hasData) {
+      // Internal nodes as proper boundary markers
+      nodes.push(leafTimes[0] ? `≤ ${leafTimes[Math.min(1, validLeaves - 1)]}` : "");
+      nodes.push(leafTimes[2] ? `≤ ${leafTimes[Math.min(3, validLeaves - 1)]}` : "");
+      nodes.push(leafTimes[4] ? `≤ ${leafTimes[Math.min(5, validLeaves - 1)]}` : "");
+      
+      for (let i = 0; i < 6; i++) {
+        nodes.push(i < validLeaves ? leafTimes[i] : "");
+      }
+    }
 
     const positions: [number, number][] = [
       [300, 35], [110, 110], [300, 110], [490, 110],
@@ -248,108 +302,150 @@ export function TreeGraphic({
     const edges: [number, number][] = [
       [0, 1], [0, 2], [0, 3], [1, 4], [1, 5], [2, 6], [2, 7], [3, 8], [3, 9],
     ];
-    const highlights = hasData ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] : [];
 
-    return (
-      <svg viewBox="0 0 610 235" className={`tree-graphic ${large ? "tree-large" : ""}`} role="img"
-        aria-label={`B+ Tree visualization${active && hasData ? " with active search path" : ""}`}>
+    return renderSvg(
+      <>
         {edges.map(([a, b]) => {
-          const pA = positions[a] || [0, 0]; const pB = positions[b] || [0, 0];
+          if (!nodes[a] || !nodes[b]) return null;
+          const pA = positions[a]; const pB = positions[b];
           return <path key={`${a}-${b}`} d={`M ${pA[0]} ${pA[1] + 16} L ${pB[0]} ${pB[1] - 16}`}
-            className={active && highlights.includes(a) && highlights.includes(b) ? "tree-edge edge-active" : "tree-edge"} />;
+            className={active ? "tree-edge edge-active" : "tree-edge"} />;
         })}
         {nodes.map((node, i) => {
-          const [x, y] = positions[i] || [0, 0];
+          if (!node) return null;
+          const [x, y] = positions[i];
           return (
-            <g key={i} className={`tree-node ${active && highlights.includes(i) ? "node-active" : ""}`}>
+            <g key={i} className={`tree-node ${active ? "node-active" : ""}`}>
               <rect x={x - (i === 0 ? 65 : 44)} y={y - 17} width={i === 0 ? 130 : 88} height={34} rx="5" />
               <text x={x} y={y + 4} textAnchor="middle">{node}</text>
             </g>
           );
         })}
-        <path d="M30 218 H530" className="tree-leaf-link" />
-      </svg>
+        {validLeaves > 1 && <path d={`M30 218 H${30 + ((validLeaves - 1) * 100)}`} className="tree-leaf-link" />}
+      </>,
+      "-50 -50 710 335"
+    );
+        {nodes.map((node, i) => {
+          if (!node) return null;
+          const [x, y] = positions[i];
+          return (
+            <g key={i} className={`tree-node ${active ? "node-active" : ""}`}>
+              <rect x={x - (i === 0 ? 65 : 44)} y={y - 17} width={i === 0 ? 130 : 88} height={34} rx="5" />
+              <text x={x} y={y + 4} textAnchor="middle">{node}</text>
+            })}
+            {validLeaves > 1 && <path d={`M30 218 H${30 + ((validLeaves - 1) * 100)}`} className="tree-leaf-link" />}
+          </svg>
+        </TransformComponent>
+      </TransformWrapper>
     );
   }
 
   // ── Dynamic Trie ─────────────────────────────────────────
   if (type === "trie") {
-    const kws = keywords.length > 0 ? keywords : (term ? [term] : []);
+    const kws = keywords.length > 0 ? keywords.slice(0, 3) : (term ? [term] : []);
     const hasData = kws.length > 0 && kws[0] !== "";
 
-    // Build trie nodes: ROOT, then up to 3 keywords, then first 2 chars of each keyword as children
-    const topLevel = kws.slice(0, 3);
-    while (topLevel.length < 3) topLevel.push("—");
+    const nodes: string[] = hasData ? ["ROOT"] : [];
+    const positions: [number, number][] = hasData ? [[300, 35]] : [];
+    const edges: [number, number][] = [];
 
-    const children: string[] = [];
-    for (const kw of topLevel) {
-      if (kw === "—") { children.push("—"); children.push("—"); }
-      else {
-        children.push(kw.slice(0, Math.ceil(kw.length / 2)));
-        children.push(kw.slice(Math.ceil(kw.length / 2)) || kw);
-      }
+    if (hasData) {
+      // For 1, 2, or 3 keywords, center them
+      let startXs = [300];
+      if (kws.length === 2) startXs = [200, 400];
+      if (kws.length === 3) startXs = [120, 300, 480];
+
+      kws.forEach((kw, kwIdx) => {
+        if (!kw) return;
+        
+        let parentIdx = 0; // ROOT
+        const currentX = startXs[kwIdx];
+        
+        // Break into: char 1, char 2, remainder (creates the prefix depth effect)
+        const parts = [
+          kw.slice(0, 1),
+          kw.slice(1, 2),
+          kw.slice(2)
+        ].filter(Boolean);
+        
+        parts.forEach((part, depth) => {
+           nodes.push(part);
+           const myIdx = nodes.length - 1;
+           positions.push([currentX, 95 + (depth * 50)]);
+           edges.push([parentIdx, myIdx]);
+           parentIdx = myIdx;
+        });
+      });
     }
 
-    const nodes = ["ROOT", ...topLevel, ...children];
-    const positions: [number, number][] = [
-      [300, 35], [110, 110], [300, 110], [490, 110],
-      [55, 185], [155, 185], [255, 185], [355, 185], [455, 185], [555, 185],
-    ];
-    const edges: [number, number][] = [
-      [0, 1], [0, 2], [0, 3], [1, 4], [1, 5], [2, 6], [2, 7], [3, 8], [3, 9],
-    ];
-    // Highlight first keyword's path
-    const highlights = hasData ? [0, 1, 4, 5] : [];
-
-    return (
-      <svg viewBox="0 0 610 235" className={`tree-graphic ${large ? "tree-large" : ""}`} role="img"
-        aria-label={`Trie visualization${active && hasData ? " with active search path" : ""}`}>
+    return renderSvg(
+      <>
         {edges.map(([a, b]) => {
-          const pA = positions[a] || [0, 0]; const pB = positions[b] || [0, 0];
+          if (!nodes[a] || !nodes[b]) return null;
+          const pA = positions[a]; const pB = positions[b];
           return <path key={`${a}-${b}`} d={`M ${pA[0]} ${pA[1] + 16} L ${pB[0]} ${pB[1] - 16}`}
-            className={active && highlights.includes(a) && highlights.includes(b) ? "tree-edge edge-active" : "tree-edge"} />;
+            className={active ? "tree-edge edge-active" : "tree-edge"} />;
         })}
         {nodes.map((node, i) => {
-          const [x, y] = positions[i] || [0, 0];
+          if (!node) return null;
+          const [x, y] = positions[i];
           return (
-            <g key={i} className={`tree-node ${active && highlights.includes(i) ? "node-active" : ""}`}>
-              <rect x={x - 44} y={y - 17} width={88} height={34} rx="5" />
+            <g key={i} className={`tree-node ${active ? "node-active" : ""}`}>
+              <rect x={x - (node.length > 8 ? 60 : 44)} y={y - 17} width={node.length > 8 ? 120 : 88} height={34} rx="5" />
               <text x={x} y={y + 4} textAnchor="middle">{node}</text>
             </g>
           );
         })}
-      </svg>
+      </>,
+      "-50 -50 710 360"
+    );
+          if (!nodes[a] || !nodes[b]) return null;
+          const pA = positions[a]; const pB = positions[b];
+          return <path key={`${a}-${b}`} d={`M ${pA[0]} ${pA[1] + 16} L ${pB[0]} ${pB[1] - 16}`}
+            className={active ? "tree-edge edge-active" : "tree-edge"} />;
+        })}
+        {nodes.map((node, i) => {
+          if (!node) return null;
+          const [x, y] = positions[i];
+          return (
+            <g key={i} className={`tree-node ${active ? "node-active" : ""}`}>
+              <rect x={x - (node.length > 8 ? 60 : 44)} y={y - 17} width={node.length > 8 ? 120 : 88} height={34} rx="5" />
+              <text x={x} y={y + 4} textAnchor="middle">{node}</text>
+            </g>
+          );
+        })}
+          </svg>
+        </TransformComponent>
+      </TransformWrapper>
     );
   }
 
   // ── Dynamic Heap ─────────────────────────────────────────
   const heapItems = events.slice(0, 7);
   const hasHeapData = heapItems.length > 0;
-  const defaultLabels = ["—", "—", "—", "—", "—", "—", "—"];
-  const nodeCount = hasHeapData ? heapItems.length : 7;
+  const nodeCount = hasHeapData ? heapItems.length : 0;
+  
   const positions: [number, number][] = [
     [300, 35], [155, 110], [445, 110], [80, 190], [230, 190], [370, 190], [520, 190],
   ];
   const edges: [number, number][] = [
     [0, 1], [0, 2], [1, 3], [1, 4], [2, 5], [2, 6],
   ];
-  const highlights = hasHeapData ? [0, 1, 3] : [];
 
-  return (
-    <svg viewBox={`0 0 610 ${large ? 260 : 235}`} className={`tree-graphic ${large ? "tree-large" : ""}`} role="img"
-      aria-label={`Heap visualization${active && hasHeapData ? " with active nodes" : ""}`}>
+  return renderSvg(
+    <>
       {edges.filter(([, b]) => b < nodeCount).map(([a, b]) => {
-        const pA = positions[a] || [0, 0]; const pB = positions[b] || [0, 0];
+        const pA = positions[a]; const pB = positions[b];
         return <path key={`${a}-${b}`} d={`M ${pA[0]} ${pA[1] + 16} L ${pB[0]} ${pB[1] - 16}`}
-          className={active && highlights.includes(a) && highlights.includes(b) ? "tree-edge edge-active" : "tree-edge"} />;
+          className={active ? "tree-edge edge-active" : "tree-edge"} />;
       })}
       {Array.from({ length: nodeCount }).map((_, i) => {
-        const [x, y] = positions[i] || [0, 0];
+        const [x, y] = positions[i];
         const item = heapItems[i];
         return (
-          <g key={i} className={`tree-node ${active && highlights.includes(i) ? "node-active" : ""} ${item && (item.severity === "CRITICAL") ? "node-critical" : ""}`}>
+          <g key={i} className={`tree-node ${active ? "node-active" : ""} ${item && (item.severity === "CRITICAL") ? "node-critical" : ""}`}>
             <rect x={x - 44} y={y - 17} width={88} height={large ? 59 : 34} rx="5" />
-            <text x={x} y={y + 4} textAnchor="middle">{item?.severity ?? defaultLabels[i]}</text>
+            <text x={x} y={y + 4} textAnchor="middle">{item?.severity}</text>
             {large && (
               <>
                 <text x={x} y={y + 20} textAnchor="middle" className="node-subtext">
@@ -363,7 +459,8 @@ export function TreeGraphic({
           </g>
         );
       })}
-    </svg>
+    </>,
+    `-50 -50 710 ${large ? 380 : 335}`
   );
 }
 export function Pipeline({
