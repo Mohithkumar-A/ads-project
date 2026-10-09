@@ -291,7 +291,7 @@ export function TreeGraphic({
       nodes.push(leafTimes[4] ? `≤ ${leafTimes[Math.min(5, validLeaves - 1)]}` : "");
       
       for (let i = 0; i < 6; i++) {
-        nodes.push(i < validLeaves ? leafTimes[i] : "");
+        nodes.push(i < validLeaves ? (leafTimes[i] || "") : "");
       }
     }
 
@@ -306,14 +306,14 @@ export function TreeGraphic({
     return renderSvg(
       <>
         {edges.map(([a, b]) => {
-          if (!nodes[a] || !nodes[b]) return null;
-          const pA = positions[a]; const pB = positions[b];
+          if (!nodes[a] || !nodes[b] || !positions[a] || !positions[b]) return null;
+          const pA = positions[a]!; const pB = positions[b]!;
           return <path key={`${a}-${b}`} d={`M ${pA[0]} ${pA[1] + 16} L ${pB[0]} ${pB[1] - 16}`}
             className={active ? "tree-edge edge-active" : "tree-edge"} />;
         })}
         {nodes.map((node, i) => {
-          if (!node) return null;
-          const [x, y] = positions[i];
+          if (!node || !positions[i]) return null;
+          const [x, y] = positions[i]!;
           return (
             <g key={i} className={`tree-node ${active ? "node-active" : ""}`}>
               <rect x={x - (i === 0 ? 65 : 44)} y={y - 17} width={i === 0 ? 130 : 88} height={34} rx="5" />
@@ -324,19 +324,6 @@ export function TreeGraphic({
         {validLeaves > 1 && <path d={`M30 218 H${30 + ((validLeaves - 1) * 100)}`} className="tree-leaf-link" />}
       </>,
       "-50 -50 710 335"
-    );
-        {nodes.map((node, i) => {
-          if (!node) return null;
-          const [x, y] = positions[i];
-          return (
-            <g key={i} className={`tree-node ${active ? "node-active" : ""}`}>
-              <rect x={x - (i === 0 ? 65 : 44)} y={y - 17} width={i === 0 ? 130 : 88} height={34} rx="5" />
-              <text x={x} y={y + 4} textAnchor="middle">{node}</text>
-            })}
-            {validLeaves > 1 && <path d={`M30 218 H${30 + ((validLeaves - 1) * 100)}`} className="tree-leaf-link" />}
-          </svg>
-        </TransformComponent>
-      </TransformWrapper>
     );
   }
 
@@ -350,16 +337,16 @@ export function TreeGraphic({
     const edges: [number, number][] = [];
 
     if (hasData) {
-      // For 1, 2, or 3 keywords, center them
-      let startXs = [300];
-      if (kws.length === 2) startXs = [200, 400];
-      if (kws.length === 3) startXs = [120, 300, 480];
+      // Dynamically spread the root branches evenly
+      const startXs = kws.map((_, i) => {
+        return (600 / (kws.length + 1)) * (i + 1);
+      });
 
       kws.forEach((kw, kwIdx) => {
         if (!kw) return;
         
         let parentIdx = 0; // ROOT
-        const currentX = startXs[kwIdx];
+        const currentX = startXs[kwIdx] ?? 300;
         
         // Break into: char 1, char 2, remainder (creates the prefix depth effect)
         const parts = [
@@ -381,14 +368,14 @@ export function TreeGraphic({
     return renderSvg(
       <>
         {edges.map(([a, b]) => {
-          if (!nodes[a] || !nodes[b]) return null;
-          const pA = positions[a]; const pB = positions[b];
+          if (!nodes[a] || !nodes[b] || !positions[a] || !positions[b]) return null;
+          const pA = positions[a]!; const pB = positions[b]!;
           return <path key={`${a}-${b}`} d={`M ${pA[0]} ${pA[1] + 16} L ${pB[0]} ${pB[1] - 16}`}
             className={active ? "tree-edge edge-active" : "tree-edge"} />;
         })}
         {nodes.map((node, i) => {
-          if (!node) return null;
-          const [x, y] = positions[i];
+          if (!node || !positions[i]) return null;
+          const [x, y] = positions[i]!;
           return (
             <g key={i} className={`tree-node ${active ? "node-active" : ""}`}>
               <rect x={x - (node.length > 8 ? 60 : 44)} y={y - 17} width={node.length > 8 ? 120 : 88} height={34} rx="5" />
@@ -399,48 +386,44 @@ export function TreeGraphic({
       </>,
       "-50 -50 710 360"
     );
-          if (!nodes[a] || !nodes[b]) return null;
-          const pA = positions[a]; const pB = positions[b];
-          return <path key={`${a}-${b}`} d={`M ${pA[0]} ${pA[1] + 16} L ${pB[0]} ${pB[1] - 16}`}
-            className={active ? "tree-edge edge-active" : "tree-edge"} />;
-        })}
-        {nodes.map((node, i) => {
-          if (!node) return null;
-          const [x, y] = positions[i];
-          return (
-            <g key={i} className={`tree-node ${active ? "node-active" : ""}`}>
-              <rect x={x - (node.length > 8 ? 60 : 44)} y={y - 17} width={node.length > 8 ? 120 : 88} height={34} rx="5" />
-              <text x={x} y={y + 4} textAnchor="middle">{node}</text>
-            </g>
-          );
-        })}
-          </svg>
-        </TransformComponent>
-      </TransformWrapper>
-    );
   }
 
   // ── Dynamic Heap ─────────────────────────────────────────
-  const heapItems = events.slice(0, 7);
+  const heapItems = events; // Render all returned events
   const hasHeapData = heapItems.length > 0;
   const nodeCount = hasHeapData ? heapItems.length : 0;
   
-  const positions: [number, number][] = [
-    [300, 35], [155, 110], [445, 110], [80, 190], [230, 190], [370, 190], [520, 190],
-  ];
-  const edges: [number, number][] = [
-    [0, 1], [0, 2], [1, 3], [1, 4], [2, 5], [2, 6],
-  ];
+  const positions: [number, number][] = [];
+  const edges: [number, number][] = [];
+
+  if (hasHeapData) {
+    for (let i = 0; i < nodeCount; i++) {
+      const level = Math.floor(Math.log2(i + 1));
+      const positionInLevel = i - (Math.pow(2, level) - 1);
+      const levelWidth = Math.pow(2, level);
+      
+      const x = 300 + (positionInLevel - (levelWidth - 1) / 2) * (500 / levelWidth);
+      const y = 35 + level * 85;
+      
+      positions.push([x, y]);
+      
+      if (i > 0) {
+        edges.push([Math.floor((i - 1) / 2), i]);
+      }
+    }
+  }
 
   return renderSvg(
     <>
       {edges.filter(([, b]) => b < nodeCount).map(([a, b]) => {
-        const pA = positions[a]; const pB = positions[b];
+        if (!positions[a] || !positions[b]) return null;
+        const pA = positions[a]!; const pB = positions[b]!;
         return <path key={`${a}-${b}`} d={`M ${pA[0]} ${pA[1] + 16} L ${pB[0]} ${pB[1] - 16}`}
           className={active ? "tree-edge edge-active" : "tree-edge"} />;
       })}
       {Array.from({ length: nodeCount }).map((_, i) => {
-        const [x, y] = positions[i];
+        if (!positions[i]) return null;
+        const [x, y] = positions[i]!;
         const item = heapItems[i];
         return (
           <g key={i} className={`tree-node ${active ? "node-active" : ""} ${item && (item.severity === "CRITICAL") ? "node-critical" : ""}`}>

@@ -142,11 +142,11 @@ export const mockApi = {
       }
 
       const data = await response.json();
-      
+
       const bplusMetric = data.dsa_metrics?.find((m: any) => m.name === "B+ Tree") || {};
       const trieMetric = data.dsa_metrics?.find((m: any) => m.name === "Trie") || {};
       const heapMetric = data.dsa_metrics?.find((m: any) => m.name === "Heap") || {};
-      
+
       return {
         question,
         tool_call: data.tool_call,

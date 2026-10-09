@@ -16,8 +16,11 @@ export function BPlusPage() {
   const { result } = store;
 
   const used = result?.tool_call?.bplus?.used ?? false;
-  const range = used && result?.tool_call?.bplus ? [result.tool_call.bplus.start_time, result.tool_call.bplus.end_time] : ["—", "—"];
-  const metrics = result?.dsa_metrics?.find(m => m.name === "B+ Tree");
+  const range =
+    used && result?.tool_call?.bplus
+      ? [result.tool_call.bplus.start_time, result.tool_call.bplus.end_time]
+      : ["—", "—"];
+  const metrics = result?.dsa_metrics?.find((m) => m.name === "B+ Tree");
   const evidence = used && result?.evidence ? result.evidence : [];
 
   return (
@@ -66,7 +69,8 @@ export function BPlusPage() {
             <div className="findings-title">Traversal Process</div>
             <p className="small-note mb-4">
               Navigated from root node down to leaf nodes covering the time range{" "}
-              {range.join(" to ")}. {metrics?.nodes_accessed ?? "—"} nodes were accessed during this traversal.
+              {range.join(" to ")}. {metrics?.nodes_accessed ?? "—"} nodes were accessed during this
+              traversal.
             </p>
             <div className="findings-title">Key Findings</div>
             <ul className="findings-list">
@@ -74,16 +78,15 @@ export function BPlusPage() {
                 <CircleCheck /> Found {metrics?.results_count ?? 0} logs in the specified range.
               </li>
               <li>
-                <CircleCheck /> {used ? "Dynamically queried by C++ engine." : "Awaiting investigation."}
+                <CircleCheck />{" "}
+                {used ? "Dynamically queried by C++ engine." : "Awaiting investigation."}
               </li>
             </ul>
           </div>
         </Panel>
         <Panel className="results-panel !mt-0">
           <SectionHeading title="Retrieved Logs">
-            <span className="section-tag">
-              {evidence.length} records · Retrieved by B+ Tree
-            </span>
+            <span className="section-tag">{evidence.length} records · Retrieved by B+ Tree</span>
           </SectionHeading>
           <LogTable logs={evidence} />
         </Panel>
@@ -103,7 +106,7 @@ export function TriePage() {
 
   const used = result?.tool_call?.trie?.used ?? false;
   const terms = used && result?.tool_call?.trie ? result.tool_call.trie.keywords : [];
-  const metrics = result?.dsa_metrics?.find(m => m.name === "Trie");
+  const metrics = result?.dsa_metrics?.find((m) => m.name === "Trie");
   const evidence = used && result?.evidence ? result.evidence : [];
 
   return (
@@ -148,24 +151,25 @@ export function TriePage() {
           <div className="operation-body">
             <div className="findings-title">Traversal Process</div>
             <p className="small-note mb-4">
-              Traversed Trie paths for keywords: {terms.length > 0 ? terms.join(", ") : "—"}. {metrics?.nodes_accessed ?? "—"} nodes were accessed.
+              Traversed Trie paths for keywords: {terms.length > 0 ? terms.join(", ") : "—"}.{" "}
+              {metrics?.nodes_accessed ?? "—"} nodes were accessed.
             </p>
             <div className="findings-title">Key Findings</div>
             <ul className="findings-list">
               <li>
-                <CircleCheck /> Matched {terms.length} keywords across {metrics?.results_count ?? 0} logs in {metrics?.time_ms.toFixed(3) ?? "—"}ms.
+                <CircleCheck /> Matched {terms.length} keywords across {metrics?.results_count ?? 0}{" "}
+                logs in {metrics?.time_ms.toFixed(3) ?? "—"}ms.
               </li>
               <li>
-                <CircleCheck /> {used ? "Dynamically queried by C++ engine." : "Awaiting investigation."}
+                <CircleCheck />{" "}
+                {used ? "Dynamically queried by C++ engine." : "Awaiting investigation."}
               </li>
             </ul>
           </div>
         </Panel>
         <Panel className="results-panel !mt-0">
           <SectionHeading title="Matching log records">
-            <span className="section-tag">
-              {evidence.length} records · Matched by Trie
-            </span>
+            <span className="section-tag">{evidence.length} records · Matched by Trie</span>
           </SectionHeading>
           <LogTable logs={evidence} />
         </Panel>
@@ -185,7 +189,7 @@ export function HeapPage() {
 
   const used = result?.tool_call?.heap?.used ?? false;
   const k = used && result?.tool_call?.heap ? result.tool_call.heap.top_k : "—";
-  const metrics = result?.dsa_metrics?.find(m => m.name === "Heap");
+  const metrics = result?.dsa_metrics?.find((m) => m.name === "Heap");
   const evidence = used && result?.evidence ? result.evidence : [];
 
   return (
@@ -233,16 +237,19 @@ export function HeapPage() {
           <div className="operation-body">
             <div className="findings-title">Prioritization Process</div>
             <p className="small-note mb-4">
-              Sifted logs through the priority max-heap based on severity, frequency, and
-              recency using deterministic scoring rules. {metrics?.nodes_accessed ?? "—"} heap sift operations performed.
+              Sifted logs through the priority max-heap based on severity, frequency, and recency
+              using deterministic scoring rules. {metrics?.nodes_accessed ?? "—"} heap sift
+              operations performed.
             </p>
             <div className="findings-title">Key Findings</div>
             <ul className="findings-list">
               <li>
-                <CircleCheck /> Extracted Top {evidence.length} most critical events in {metrics?.time_ms.toFixed(3) ?? "—"}ms.
+                <CircleCheck /> Extracted Top {evidence.length} most critical events in{" "}
+                {metrics?.time_ms.toFixed(3) ?? "—"}ms.
               </li>
               <li>
-                <CircleCheck /> {used ? "Dynamically queried by C++ engine." : "Awaiting investigation."}
+                <CircleCheck />{" "}
+                {used ? "Dynamically queried by C++ engine." : "Awaiting investigation."}
               </li>
             </ul>
           </div>

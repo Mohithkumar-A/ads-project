@@ -405,11 +405,36 @@ export function Dashboard() {
             title="B+ Tree"
             subtitle="Time & Index Search"
             to="/bplustree"
-            query={<>{result?.tool_call.bplus.used ? `${result.tool_call.bplus.start_time} → ${result.tool_call.bplus.end_time}` : "—"}</>}
+            query={
+              <>
+                {result?.tool_call.bplus.used
+                  ? `${result.tool_call.bplus.start_time} → ${result.tool_call.bplus.end_time}`
+                  : "—"}
+              </>
+            }
             metrics={[
-              ["Nodes accessed", result ? String(result.dsa_metrics.find(m => m.name === "B+ Tree")?.nodes_accessed ?? "—") : "—"],
-              ["Logs retrieved", result ? String(result.dsa_metrics.find(m => m.name === "B+ Tree")?.results_count ?? "—") : "—"],
-              ["Search time", result ? `${result.dsa_metrics.find(m => m.name === "B+ Tree")?.time_ms.toFixed(3)} ms` : "—"],
+              [
+                "Nodes accessed",
+                result
+                  ? String(
+                      result.dsa_metrics.find((m) => m.name === "B+ Tree")?.nodes_accessed ?? "—",
+                    )
+                  : "—",
+              ],
+              [
+                "Logs retrieved",
+                result
+                  ? String(
+                      result.dsa_metrics.find((m) => m.name === "B+ Tree")?.results_count ?? "—",
+                    )
+                  : "—",
+              ],
+              [
+                "Search time",
+                result
+                  ? `${result.dsa_metrics.find((m) => m.name === "B+ Tree")?.time_ms.toFixed(3)} ms`
+                  : "—",
+              ],
               ["Tree height", result ? "4" : "—"],
             ]}
             active={Boolean(result && result.tool_call.bplus.used)}
@@ -431,9 +456,24 @@ export function Dashboard() {
                 : "—"
             }
             metrics={[
-              ["Logs matched", result ? String(result.dsa_metrics.find(m => m.name === "Trie")?.results_count ?? "—") : "—"],
-              ["Nodes traversed", result ? String(result.dsa_metrics.find(m => m.name === "Trie")?.nodes_accessed ?? "—") : "—"],
-              ["Search time", result ? `${result.dsa_metrics.find(m => m.name === "Trie")?.time_ms.toFixed(3)} ms` : "—"],
+              [
+                "Logs matched",
+                result
+                  ? String(result.dsa_metrics.find((m) => m.name === "Trie")?.results_count ?? "—")
+                  : "—",
+              ],
+              [
+                "Nodes traversed",
+                result
+                  ? String(result.dsa_metrics.find((m) => m.name === "Trie")?.nodes_accessed ?? "—")
+                  : "—",
+              ],
+              [
+                "Search time",
+                result
+                  ? `${result.dsa_metrics.find((m) => m.name === "Trie")?.time_ms.toFixed(3)} ms`
+                  : "—",
+              ],
               ["Indexed terms", result ? "8,492" : "—"],
             ]}
             active={Boolean(result && result.tool_call.trie.used)}
@@ -453,7 +493,9 @@ export function Dashboard() {
             metrics={[
               [
                 "Events considered",
-                result ? String(result.dsa_metrics.find(m => m.name === "Heap")?.results_count ?? "—") : "—",
+                result
+                  ? String(result.dsa_metrics.find((m) => m.name === "Heap")?.results_count ?? "—")
+                  : "—",
               ],
               ["Top K", result?.tool_call.heap.used ? String(result.tool_call.heap.top_k) : "10"],
               [
@@ -468,7 +510,12 @@ export function Dashboard() {
                   "—"
                 ),
               ],
-              ["Processing time", result ? `${result.dsa_metrics.find(m => m.name === "Heap")?.time_ms.toFixed(3)} ms` : "—"],
+              [
+                "Processing time",
+                result
+                  ? `${result.dsa_metrics.find((m) => m.name === "Heap")?.time_ms.toFixed(3)} ms`
+                  : "—",
+              ],
             ]}
             active={Boolean(result && result.tool_call.heap.used)}
             processing={processing}

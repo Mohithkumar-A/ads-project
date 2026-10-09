@@ -151,6 +151,9 @@ int main(int argc, char* argv[]) {
         Trie trie;
         for (LogRecord* rec : currentEvidence) {
             trie.insertMessage(rec->message, rec);
+            trie.insertMessage(rec->server, rec);
+            trie.insertMessage(rec->severity, rec);
+            trie.insertMessage(rec->service, rec);
         }
         
         // We'll just search for the first key for simplicity in this lab,
