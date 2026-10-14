@@ -101,7 +101,8 @@ Example structure (DO NOT copy these values unless relevant, only use the struct
 // Phase 2 — Evidence Synthesis (Post-processing)
 //
 // Takes the user's original prompt + the raw evidence found by
-// the C++ engine and produces a human-readable summary.
+// the C++ engine and produces a human-readable summary with
+// dual-perspective explanations and two-tier remediation.
 // ─────────────────────────────────────────────────────────────
 
 export interface SynthesisResult {
@@ -109,6 +110,11 @@ export interface SynthesisResult {
   root_cause: string;
   possible_fix: string;
   key_findings: string[];
+  // Enhanced dual-perspective fields
+  non_technical_summary: string;
+  technical_root_cause: string;
+  immediate_mitigation: string;
+  permanent_fix: string;
 }
 
 export async function generateSummary(
@@ -121,24 +127,49 @@ export async function generateSummary(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: OLLAMA_MODEL,
-        prompt: `You are an expert Senior DevOps Engineer analyzing an incident.
-The user asked: "${prompt}"
+        prompt: `You are an Evidence-Grounded Site Reliability Engineering Assessor analyzing an incident.
 
-The C++ data structures have isolated the Top K most critical log events (in JSON format):
+IDENTITY & ROLE:
+You are a senior SRE with 15 years of production systems experience. You diagnose infrastructure failures by examining ONLY the log evidence provided. You never speculate or invent details.
+
+USER QUERY: "${prompt}"
+
+VERIFIED LOG EVIDENCE (from C++ DSA engine — these are the ONLY facts you may reference):
 ${evidenceJson}
 
-RULES:
-1. If the log events array is empty "[]", respond strictly with:
-   {"summary": "No logs matched your search criteria.", "root_cause": "N/A", "possible_fix": "N/A", "key_findings": []}
-2. Otherwise, synthesize a highly structured incident report. Output MUST be valid JSON exactly matching this structure:
+═══════════════════════════════════════════════════
+STRICT ANTI-HALLUCINATION RULES (MANDATORY):
+═══════════════════════════════════════════════════
+
+1. EVIDENCE BOUNDARY: Base ALL analysis strictly and exclusively on the log evidence JSON above. DO NOT infer, assume, or invent ANY servers, services, IP addresses, error codes, metrics, percentages, or technical details that do not appear VERBATIM in the evidence.
+
+2. CITATION RULE: Every factual claim in root_cause, technical_root_cause, and key_findings MUST cite the exact timestamp and server from the evidence in brackets, e.g. "[2026-10-08 14:18:05 DB-01]". Uncited claims are FORBIDDEN.
+
+3. TEMPORAL CAUSALITY: Ensure the root cause event timestamp occurs BEFORE any downstream cascading failures. Events cannot cause failures that happened before them.
+
+4. MISSING INFORMATION: If the evidence does not contain sufficient details to determine a specific metric or cause, state "Not observed in retrieved logs" instead of guessing.
+
+═══════════════════════════════════════════════════
+OUTPUT REQUIREMENTS:
+═══════════════════════════════════════════════════
+
+If the evidence array is empty "[]", respond with:
+{"summary":"No logs matched your search criteria.","root_cause":"N/A","possible_fix":"N/A","key_findings":[],"non_technical_summary":"No relevant events were found matching your query.","technical_root_cause":"N/A","immediate_mitigation":"N/A","permanent_fix":"N/A"}
+
+Otherwise produce VALID JSON matching this EXACT structure:
+
 {
-  "summary": "Brief 1-sentence overview of the incident.",
-  "root_cause": "Detailed technical explanation of what caused the issue based on the logs.",
-  "possible_fix": "Actionable step to resolve the issue.",
-  "key_findings": ["Bullet point 1", "Bullet point 2"]
+  "summary": "One-sentence incident title describing what failed and the impact.",
+  "non_technical_summary": "Plain-English explanation for non-technical stakeholders: What broke? Who was affected? What did users experience? Avoid all jargon.",
+  "root_cause": "Concise root cause (backward-compatible field).",
+  "technical_root_cause": "Detailed technical systems diagnosis for senior engineers. Explain the causal chain: what resource was exhausted or what failure occurred, how it propagated, and what downstream systems were affected. Cite timestamps and servers.",
+  "possible_fix": "Combined remediation summary (backward-compatible field).",
+  "immediate_mitigation": "Direct, actionable operational commands or steps to stop this incident RIGHT NOW. Be specific: mention exact processes to restart, configurations to change, or queries to run.",
+  "permanent_fix": "Structural architectural and code-level changes to prevent this class of incident from recurring. Reference specific technologies, patterns, or configurations.",
+  "key_findings": ["Chronologically ordered bullet points, each citing [timestamp server] from the evidence."]
 }
 
-Output MUST be strictly JSON format. Do NOT include markdown blocks.`,
+Output MUST be strictly valid JSON. No markdown blocks, no extra text.`,
         format: "json",
         stream: false,
       }),
@@ -161,9 +192,13 @@ Output MUST be strictly JSON format. Do NOT include markdown blocks.`,
     
     return {
       summary: parsed?.summary || "No summary generated.",
-      root_cause: parsed?.root_cause || "No root cause identified.",
-      possible_fix: parsed?.possible_fix || "No fix provided.",
-      key_findings: Array.isArray(parsed?.key_findings) ? parsed.key_findings : []
+      root_cause: parsed?.root_cause || parsed?.technical_root_cause || "No root cause identified.",
+      possible_fix: parsed?.possible_fix || parsed?.immediate_mitigation || "No fix provided.",
+      key_findings: Array.isArray(parsed?.key_findings) ? parsed.key_findings : [],
+      non_technical_summary: parsed?.non_technical_summary || parsed?.summary || "No summary available.",
+      technical_root_cause: parsed?.technical_root_cause || parsed?.root_cause || "No technical analysis available.",
+      immediate_mitigation: parsed?.immediate_mitigation || "No immediate steps provided.",
+      permanent_fix: parsed?.permanent_fix || parsed?.possible_fix || "No permanent fix provided.",
     } as SynthesisResult;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -171,3 +206,4 @@ Output MUST be strictly JSON format. Do NOT include markdown blocks.`,
     throw new Error(`LLM parsing failed: ${message}`);
   }
 }
+

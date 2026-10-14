@@ -208,40 +208,107 @@ BPlusNode* BPlusTree::findParent(BPlusNode* cursor, BPlusNode* child) {
 std::vector<LogRecord*> BPlusTree::searchRange(const std::string& start_time, const std::string& end_time) {
     std::vector<LogRecord*> result;
     nodesAccessed = 0;
+    traversalPath.nodes.clear();
+    traversalPath.edges.clear();
 
     if (root == nullptr) return result;
 
     BPlusNode* cursor = root;
     nodesAccessed++;
 
-    // Traverse to leaf
+    // ── Record root node ────────────────────────────────────
+    BPlusTraceNode rootTrace;
+    rootTrace.id = "root";
+    rootTrace.type = "root";
+    for (int i = 0; i < cursor->size; i++) {
+        rootTrace.keys.push_back(cursor->keys[i]);
+    }
+    rootTrace.chosen_branch = -1;
+
+    // ── Descend to leaf ─────────────────────────────────────
+    int internalIdx = 0;
+    std::string prevId = "root";
+
     while (!cursor->isLeaf) {
         int i = 0;
         while (i < cursor->size && start_time >= cursor->keys[i]) {
             i++;
         }
+
+        // Record chosen branch on the current (parent) node
+        if (prevId == "root") {
+            rootTrace.chosen_branch = i;
+        }
+
         cursor = cursor->ptrs[i];
         nodesAccessed++;
+
+        if (!cursor->isLeaf) {
+            // Internal node
+            std::string nodeId = "internal-" + std::to_string(internalIdx);
+            BPlusTraceNode internalTrace;
+            internalTrace.id = nodeId;
+            internalTrace.type = "internal";
+            for (int k = 0; k < cursor->size; k++) {
+                internalTrace.keys.push_back(cursor->keys[k]);
+            }
+
+            // Determine which branch we'll take next
+            int nextI = 0;
+            while (nextI < cursor->size && start_time >= cursor->keys[nextI]) {
+                nextI++;
+            }
+            internalTrace.chosen_branch = nextI;
+
+            traversalPath.edges.push_back({prevId, nodeId,
+                "branch " + std::to_string(i) + " (>= " + start_time + ")"});
+            traversalPath.nodes.push_back(internalTrace);
+            prevId = nodeId;
+            internalIdx++;
+        }
     }
 
-    // Traverse linked list
+    // Push root trace now that chosen_branch is set
+    traversalPath.nodes.insert(traversalPath.nodes.begin(), rootTrace);
+
+    // ── Record first leaf & traverse linked list ────────────
+    int leafIdx = 0;
     while (cursor != nullptr) {
         nodesAccessed++;
+        std::string leafId = "leaf-" + std::to_string(leafIdx);
+
+        BPlusTraceNode leafTrace;
+        leafTrace.id = leafId;
+        leafTrace.type = "leaf";
+        leafTrace.chosen_branch = -1;
+
         bool done = false;
         for (int i = 0; i < cursor->size; i++) {
+            leafTrace.keys.push_back(cursor->keys[i]);
             if (cursor->keys[i] > end_time) {
                 done = true;
                 break;
             }
             if (cursor->keys[i] >= start_time) {
-                // Add all records with this timestamp
+                leafTrace.matched_keys.push_back(cursor->keys[i]);
                 for (LogRecord* rec : cursor->dataPtrs[i]) {
                     result.push_back(rec);
                 }
             }
         }
+
+        // Edge from parent to this leaf
+        if (leafIdx == 0) {
+            traversalPath.edges.push_back({prevId, leafId, "match start"});
+        } else {
+            std::string prevLeafId = "leaf-" + std::to_string(leafIdx - 1);
+            traversalPath.edges.push_back({prevLeafId, leafId, "next pointer (range scan)"});
+        }
+        traversalPath.nodes.push_back(leafTrace);
+
         if (done) break;
         cursor = cursor->next;
+        leafIdx++;
     }
 
     return result;
@@ -250,3 +317,8 @@ std::vector<LogRecord*> BPlusTree::searchRange(const std::string& start_time, co
 int BPlusTree::getNodesAccessed() const {
     return nodesAccessed;
 }
+
+const BPlusTraversalPath& BPlusTree::getTraversalPath() const {
+    return traversalPath;
+}
+

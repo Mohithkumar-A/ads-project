@@ -407,8 +407,12 @@ export function Dashboard() {
             to="/bplustree"
             query={
               <>
-                {result?.tool_call.bplus.used && result.tool_call.bplus.ranges && result.tool_call.bplus.ranges.length > 0
-                  ? result.tool_call.bplus.ranges.map(r => `${r.start_time} → ${r.end_time}`).join(", ")
+                {result?.tool_call.bplus.used &&
+                result.tool_call.bplus.ranges &&
+                result.tool_call.bplus.ranges.length > 0
+                  ? result.tool_call.bplus.ranges
+                      .map((r) => `${r.start_time} → ${r.end_time}`)
+                      .join(", ")
                   : "—"}
               </>
             }
@@ -538,15 +542,120 @@ export function Dashboard() {
                 <AlertTriangle />
                 {result.summary}
               </h3>
+
+              {/* Non-Technical Summary (Executive View) */}
+              {result.non_technical_summary && result.non_technical_summary !== result.summary && (
+                <div
+                  style={{
+                    marginTop: "16px",
+                    padding: "12px 16px",
+                    background: "oklch(0.25 0.01 250 / 50%)",
+                    borderRadius: "8px",
+                    borderLeft: "3px solid oklch(0.7 0.15 250)",
+                  }}
+                >
+                  <div
+                    className="incident-label"
+                    style={{ color: "oklch(0.7 0.15 250)", fontSize: "10px", marginBottom: "4px" }}
+                  >
+                    💼 EXECUTIVE SUMMARY
+                  </div>
+                  <p
+                    style={{ fontSize: "13px", lineHeight: 1.6, color: "var(--muted-foreground)" }}
+                  >
+                    {result.non_technical_summary}
+                  </p>
+                </div>
+              )}
+
+              {/* Technical Root Cause */}
               <div style={{ marginTop: "16px" }}>
-                <div className="incident-label" style={{ color: "#ff6b6b" }}>ROOT CAUSE</div>
-                <p style={{ marginTop: "4px", fontSize: "14px", lineHeight: 1.5, color: "var(--muted-foreground)" }}>{result.root_cause}</p>
+                <div className="incident-label" style={{ color: "#ff6b6b" }}>
+                  🔍 {result.technical_root_cause ? "TECHNICAL ROOT CAUSE" : "ROOT CAUSE"}
+                </div>
+                <p
+                  style={{
+                    marginTop: "4px",
+                    fontSize: "14px",
+                    lineHeight: 1.5,
+                    color: "var(--muted-foreground)",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {result.technical_root_cause || result.root_cause}
+                </p>
               </div>
 
-              <div style={{ marginTop: "16px" }}>
-                <div className="incident-label" style={{ color: "#4ade80" }}>POSSIBLE FIX</div>
-                <p style={{ marginTop: "4px", fontSize: "14px", lineHeight: 1.5, color: "var(--muted-foreground)" }}>{result.possible_fix}</p>
+              {/* Two-Tier Remediation */}
+              <div
+                style={{
+                  marginTop: "16px",
+                  display: "grid",
+                  gridTemplateColumns: result.permanent_fix ? "1fr 1fr" : "1fr",
+                  gap: "12px",
+                }}
+              >
+                {/* Immediate Mitigation */}
+                <div
+                  style={{
+                    padding: "12px 16px",
+                    background: "oklch(0.2 0.02 30 / 50%)",
+                    borderRadius: "8px",
+                    borderLeft: "3px solid oklch(0.7 0.18 30)",
+                  }}
+                >
+                  <div
+                    className="incident-label"
+                    style={{ color: "oklch(0.7 0.18 30)", fontSize: "10px", marginBottom: "4px" }}
+                  >
+                    🚨 {result.immediate_mitigation ? "IMMEDIATE MITIGATION" : "POSSIBLE FIX"}
+                  </div>
+                  <p
+                    style={{
+                      fontSize: "13px",
+                      lineHeight: 1.5,
+                      color: "var(--muted-foreground)",
+                      whiteSpace: "pre-wrap",
+                    }}
+                  >
+                    {result.immediate_mitigation || result.possible_fix}
+                  </p>
+                </div>
+
+                {/* Permanent Fix */}
+                {result.permanent_fix && result.permanent_fix !== "N/A" && (
+                  <div
+                    style={{
+                      padding: "12px 16px",
+                      background: "oklch(0.2 0.02 150 / 50%)",
+                      borderRadius: "8px",
+                      borderLeft: "3px solid oklch(0.7 0.15 150)",
+                    }}
+                  >
+                    <div
+                      className="incident-label"
+                      style={{
+                        color: "oklch(0.7 0.15 150)",
+                        fontSize: "10px",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      🛡️ PERMANENT FIX
+                    </div>
+                    <p
+                      style={{
+                        fontSize: "13px",
+                        lineHeight: 1.5,
+                        color: "var(--muted-foreground)",
+                        whiteSpace: "pre-wrap",
+                      }}
+                    >
+                      {result.permanent_fix}
+                    </p>
+                  </div>
+                )}
               </div>
+
               <div className="findings-title">Key findings</div>
               <ul className="findings-list">
                 {result.key_findings.map((f) => (

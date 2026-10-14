@@ -54,6 +54,72 @@ export interface AgentToolCall {
 // C++ Engine Types (Input / Output)
 // ─────────────────────────────────────────────────────────────
 
+/** B+ Tree traversal path from C++ engine */
+export interface BPlusTraceNode {
+  id: string;
+  type: "root" | "internal" | "leaf";
+  keys: string[];
+  matched_keys: string[];
+  chosen_branch: number;
+}
+
+export interface BPlusTraceEdge {
+  from: string;
+  to: string;
+  label: string;
+}
+
+export interface BPlusTraversalPath {
+  type: "bplus";
+  nodes: BPlusTraceNode[];
+  edges: BPlusTraceEdge[];
+}
+
+/** Trie traversal path from C++ engine */
+export interface TrieTraceStep {
+  char: string;
+  found: boolean;
+  depth: number;
+}
+
+export interface TrieKeywordTrace {
+  keyword: string;
+  terminal_hit: boolean;
+  matches_count: number;
+  steps: TrieTraceStep[];
+}
+
+export interface TrieTraversalPath {
+  type: "trie";
+  keyword_traces: TrieKeywordTrace[];
+}
+
+/** Heap traversal path from C++ engine */
+export interface HeapSiftStep {
+  index: number;
+  label: string;
+  left_child_score: number;
+  right_child_score: number;
+  swapped: boolean;
+  swapped_with: number;
+}
+
+export interface HeapExtractionTrace {
+  rank: number;
+  extracted_severity: string;
+  extracted_server: string;
+  extracted_score: number;
+  sift_path: HeapSiftStep[];
+}
+
+export interface HeapTraversalPath {
+  type: "heap";
+  total_heap_size: number;
+  extractions: HeapExtractionTrace[];
+}
+
+export type DSATraversalPath = BPlusTraversalPath | TrieTraversalPath | HeapTraversalPath;
+
 /** Performance metrics returned by the C++ engine for each DSA */
 export interface DSAMetrics {
   name: string;
@@ -61,6 +127,7 @@ export interface DSAMetrics {
   time_ms: number;
   nodes_accessed: number;
   results_count: number;
+  traversal_path?: DSATraversalPath;
 }
 
 /** The full JSON output schema from the C++ engine's stdout */
@@ -83,6 +150,11 @@ export interface InvestigationResponse {
   dsa_metrics: DSAMetrics[];
   tool_call: AgentToolCall;
   processing_time_ms: number;
+  // Enhanced dual-perspective fields
+  non_technical_summary?: string;
+  technical_root_cause?: string;
+  immediate_mitigation?: string;
+  permanent_fix?: string;
 }
 
 /** Shape of the request body from the frontend */

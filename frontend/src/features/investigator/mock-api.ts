@@ -101,12 +101,78 @@ export interface AgentToolCall {
   heap: HeapParams;
 }
 
+// ── Traversal path types (from C++ engine) ──────────────────
+
+export interface BPlusTraceNode {
+  id: string;
+  type: "root" | "internal" | "leaf";
+  keys: string[];
+  matched_keys: string[];
+  chosen_branch: number;
+}
+
+export interface BPlusTraceEdge {
+  from: string;
+  to: string;
+  label: string;
+}
+
+export interface BPlusTraversalPath {
+  type: "bplus";
+  nodes: BPlusTraceNode[];
+  edges: BPlusTraceEdge[];
+}
+
+export interface TrieTraceStep {
+  char: string;
+  found: boolean;
+  depth: number;
+}
+
+export interface TrieKeywordTrace {
+  keyword: string;
+  terminal_hit: boolean;
+  matches_count: number;
+  steps: TrieTraceStep[];
+}
+
+export interface TrieTraversalPath {
+  type: "trie";
+  keyword_traces: TrieKeywordTrace[];
+}
+
+export interface HeapSiftStep {
+  index: number;
+  label: string;
+  left_child_score: number;
+  right_child_score: number;
+  swapped: boolean;
+  swapped_with: number;
+}
+
+export interface HeapExtractionTrace {
+  rank: number;
+  extracted_severity: string;
+  extracted_server: string;
+  extracted_score: number;
+  sift_path: HeapSiftStep[];
+}
+
+export interface HeapTraversalPath {
+  type: "heap";
+  total_heap_size: number;
+  extractions: HeapExtractionTrace[];
+}
+
+export type DSATraversalPath = BPlusTraversalPath | TrieTraversalPath | HeapTraversalPath;
+
 export interface DSAMetrics {
   name: string;
   used: boolean;
   time_ms: number;
   nodes_accessed: number;
   results_count: number;
+  traversal_path?: DSATraversalPath;
 }
 
 export type InvestigationResult = {
@@ -119,6 +185,11 @@ export type InvestigationResult = {
   dsa_metrics: DSAMetrics[];
   tool_call: AgentToolCall;
   processing_time_ms: number;
+  // Enhanced dual-perspective fields
+  non_technical_summary?: string;
+  technical_root_cause?: string;
+  immediate_mitigation?: string;
+  permanent_fix?: string;
 };
 // REST adapter: methods call the backend C++ engine, with local JS fallbacks.
 export const endpoints = {
@@ -148,10 +219,6 @@ export const mockApi = {
 
       const data = await response.json();
 
-      const bplusMetric = data.dsa_metrics?.find((m: any) => m.name === "B+ Tree") || {};
-      const trieMetric = data.dsa_metrics?.find((m: any) => m.name === "Trie") || {};
-      const heapMetric = data.dsa_metrics?.find((m: any) => m.name === "Heap") || {};
-
       return {
         question,
         tool_call: data.tool_call,
@@ -162,6 +229,10 @@ export const mockApi = {
         key_findings: data.key_findings || [],
         dsa_metrics: data.dsa_metrics || [],
         processing_time_ms: data.processing_time_ms || 0,
+        non_technical_summary: data.non_technical_summary,
+        technical_root_cause: data.technical_root_cause,
+        immediate_mitigation: data.immediate_mitigation,
+        permanent_fix: data.permanent_fix,
       };
     } catch (err) {
       console.error("Investigation failed:", err);

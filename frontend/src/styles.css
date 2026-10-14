@@ -1,4 +1,4 @@
-@import "tailwindcss" source(none);
+@import "tailwindcss";
 @import "tw-animate-css";
 @source "../src";
 @custom-variant dark (&:is(.dark *));
@@ -839,6 +839,33 @@ h1 {
 .tree-node text.node-subtext {
   font-size: 8px;
   fill: var(--muted-foreground);
+}
+/* Traversed-path visualization node states */
+.tree-node.node-matched rect {
+  stroke: var(--success, #4ade80);
+  fill: color-mix(in oklab, var(--success, #4ade80) 12%, var(--card));
+  stroke-width: 2;
+}
+.tree-node.node-matched text {
+  fill: var(--success, #4ade80);
+}
+.tree-node.node-terminal rect {
+  stroke: var(--success, #4ade80);
+  fill: color-mix(in oklab, var(--success, #4ade80) 15%, var(--card));
+  stroke-width: 2.5;
+}
+.tree-node.node-terminal text {
+  fill: var(--success, #4ade80);
+  font-weight: 700;
+}
+.tree-node.node-miss rect {
+  stroke: var(--destructive);
+  stroke-dasharray: 3 2;
+  fill: color-mix(in oklab, var(--destructive) 6%, var(--card));
+}
+.tree-node.node-miss text {
+  fill: var(--destructive);
+  opacity: 0.7;
 }
 .ads-card-footer {
   border-top: 1px solid var(--border);

@@ -135,6 +135,11 @@ int main(int argc, char* argv[]) {
     double bplusTime = 0.0, trieTime = 0.0, heapTime = 0.0;
     int bplusNodes = 0, trieNodes = 0, heapNodes = 0;
     
+    // Hoisted traversal path data (survives DSA scope destruction)
+    BPlusTraversalPath bplusPath;
+    TrieTraversalPath triePath;
+    HeapTraversalPath heapPath;
+    
     // Pipeline Step 1: B+ Tree
     if (useBPlus && !bplusRangesRaw.empty()) {
         auto start = high_resolution_clock::now();
@@ -172,6 +177,7 @@ int main(int argc, char* argv[]) {
         auto end = high_resolution_clock::now();
         bplusTime = duration<double, std::milli>(end - start).count();
         bplusNodes = bpt.getNodesAccessed();
+        bplusPath = bpt.getTraversalPath();
     }
     
     // Pipeline Step 2: Trie
@@ -204,6 +210,7 @@ int main(int argc, char* argv[]) {
         
         auto end = high_resolution_clock::now();
         trieTime = duration<double, std::milli>(end - start).count();
+        triePath = trie.getTraversalPath();
     }
     
     // Pipeline Step 3: Max Heap
@@ -245,6 +252,7 @@ int main(int argc, char* argv[]) {
         auto end = high_resolution_clock::now();
         heapTime = duration<double, std::milli>(end - start).count();
         heapNodes = mh.getNodesAccessed();
+        heapPath = mh.getTraversalPath();
     }
     
     // 3. Serialize to JSON
@@ -258,31 +266,113 @@ int main(int argc, char* argv[]) {
     std::cout << "  ],\n";
     std::cout << "  \"dsa_metrics\": [\n";
     
-    // BPlus Metric
+    // ── BPlus Metric ──────────────────────────────────────────
     std::cout << "    {\n";
     std::cout << "      \"name\": \"B+ Tree\",\n";
     std::cout << "      \"used\": " << (useBPlus ? "true" : "false") << ",\n";
     std::cout << "      \"time_ms\": " << bplusTime << ",\n";
     std::cout << "      \"nodes_accessed\": " << bplusNodes << ",\n";
-    std::cout << "      \"results_count\": " << (useBPlus ? currentEvidence.size() : 0) << "\n";
+    std::cout << "      \"results_count\": " << (useBPlus ? currentEvidence.size() : 0) << ",\n";
+    
+    // B+ Tree traversal_path
+    std::cout << "      \"traversal_path\": {\n";
+    std::cout << "        \"type\": \"bplus\",\n";
+    std::cout << "        \"nodes\": [\n";
+    for (size_t i = 0; i < bplusPath.nodes.size(); i++) {
+        const auto& n = bplusPath.nodes[i];
+        std::cout << "          {\"id\":\"" << n.id << "\",\"type\":\"" << n.type << "\",\"keys\":[";
+        for (size_t k = 0; k < n.keys.size(); k++) {
+            std::cout << "\"" << escapeJSONString(n.keys[k]) << "\"";
+            if (k < n.keys.size() - 1) std::cout << ",";
+        }
+        std::cout << "],\"matched_keys\":[";
+        for (size_t k = 0; k < n.matched_keys.size(); k++) {
+            std::cout << "\"" << escapeJSONString(n.matched_keys[k]) << "\"";
+            if (k < n.matched_keys.size() - 1) std::cout << ",";
+        }
+        std::cout << "],\"chosen_branch\":" << n.chosen_branch << "}";
+        if (i < bplusPath.nodes.size() - 1) std::cout << ",";
+        std::cout << "\n";
+    }
+    std::cout << "        ],\n";
+    std::cout << "        \"edges\": [\n";
+    for (size_t i = 0; i < bplusPath.edges.size(); i++) {
+        const auto& e = bplusPath.edges[i];
+        std::cout << "          {\"from\":\"" << e.from << "\",\"to\":\"" << e.to << "\",\"label\":\"" << escapeJSONString(e.label) << "\"}";
+        if (i < bplusPath.edges.size() - 1) std::cout << ",";
+        std::cout << "\n";
+    }
+    std::cout << "        ]\n";
+    std::cout << "      }\n";
     std::cout << "    },\n";
     
-    // Trie Metric
+    // ── Trie Metric ───────────────────────────────────────────
     std::cout << "    {\n";
     std::cout << "      \"name\": \"Trie\",\n";
     std::cout << "      \"used\": " << (useTrie ? "true" : "false") << ",\n";
     std::cout << "      \"time_ms\": " << trieTime << ",\n";
     std::cout << "      \"nodes_accessed\": " << trieNodes << ",\n";
-    std::cout << "      \"results_count\": " << (useTrie ? currentEvidence.size() : 0) << "\n";
+    std::cout << "      \"results_count\": " << (useTrie ? currentEvidence.size() : 0) << ",\n";
+    
+    // Trie traversal_path
+    std::cout << "      \"traversal_path\": {\n";
+    std::cout << "        \"type\": \"trie\",\n";
+    std::cout << "        \"keyword_traces\": [\n";
+    for (size_t i = 0; i < triePath.keyword_traces.size(); i++) {
+        const auto& kt = triePath.keyword_traces[i];
+        std::cout << "          {\"keyword\":\"" << escapeJSONString(kt.keyword) << "\",\"terminal_hit\":" 
+                  << (kt.terminal_hit ? "true" : "false") << ",\"matches_count\":" << kt.matches_count << ",\"steps\":[";
+        for (size_t j = 0; j < kt.steps.size(); j++) {
+            const auto& s = kt.steps[j];
+            std::cout << "{\"char\":\"" << escapeJSONString(std::string(1, s.character)) 
+                      << "\",\"found\":" << (s.found ? "true" : "false") 
+                      << ",\"depth\":" << s.depth << "}";
+            if (j < kt.steps.size() - 1) std::cout << ",";
+        }
+        std::cout << "]}";
+        if (i < triePath.keyword_traces.size() - 1) std::cout << ",";
+        std::cout << "\n";
+    }
+    std::cout << "        ]\n";
+    std::cout << "      }\n";
     std::cout << "    },\n";
     
-    // Heap Metric
+    // ── Heap Metric ───────────────────────────────────────────
     std::cout << "    {\n";
     std::cout << "      \"name\": \"Heap\",\n";
     std::cout << "      \"used\": " << (useHeap ? "true" : "false") << ",\n";
     std::cout << "      \"time_ms\": " << heapTime << ",\n";
     std::cout << "      \"nodes_accessed\": " << heapNodes << ",\n";
-    std::cout << "      \"results_count\": " << (useHeap ? currentEvidence.size() : 0) << "\n";
+    std::cout << "      \"results_count\": " << (useHeap ? currentEvidence.size() : 0) << ",\n";
+    
+    // Heap traversal_path
+    std::cout << "      \"traversal_path\": {\n";
+    std::cout << "        \"type\": \"heap\",\n";
+    std::cout << "        \"total_heap_size\": " << heapPath.total_heap_size << ",\n";
+    std::cout << "        \"extractions\": [\n";
+    for (size_t i = 0; i < heapPath.extractions.size(); i++) {
+        const auto& ex = heapPath.extractions[i];
+        std::cout << "          {\"rank\":" << ex.rank 
+                  << ",\"extracted_severity\":\"" << escapeJSONString(ex.extracted_severity) 
+                  << "\",\"extracted_server\":\"" << escapeJSONString(ex.extracted_server)
+                  << "\",\"extracted_score\":" << ex.extracted_score
+                  << ",\"sift_path\":[";
+        for (size_t j = 0; j < ex.sift_path.size(); j++) {
+            const auto& sp = ex.sift_path[j];
+            std::cout << "{\"index\":" << sp.index 
+                      << ",\"label\":\"" << escapeJSONString(sp.label)
+                      << "\",\"left_child_score\":" << sp.left_child_score
+                      << ",\"right_child_score\":" << sp.right_child_score
+                      << ",\"swapped\":" << (sp.swapped ? "true" : "false")
+                      << ",\"swapped_with\":" << sp.swapped_with << "}";
+            if (j < ex.sift_path.size() - 1) std::cout << ",";
+        }
+        std::cout << "]}";
+        if (i < heapPath.extractions.size() - 1) std::cout << ",";
+        std::cout << "\n";
+    }
+    std::cout << "        ]\n";
+    std::cout << "      }\n";
     std::cout << "    }\n";
     
     std::cout << "  ]\n";
@@ -290,3 +380,4 @@ int main(int argc, char* argv[]) {
     
     return 0;
 }
+

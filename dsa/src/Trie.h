@@ -8,6 +8,26 @@
 // We use 256 for all standard ASCII characters
 const int ALPHABET_SIZE = 256;
 
+// ── Traversal trace structures ──────────────────────────────
+// Captures the character-by-character path taken during search.
+
+struct TrieTraceStep {
+    char character;         // the character traversed at this step
+    bool found;             // true if the child existed
+    int depth;              // depth in the trie (0 = root)
+};
+
+struct TrieKeywordTrace {
+    std::string keyword;
+    std::vector<TrieTraceStep> steps;
+    bool terminal_hit;      // true if full keyword was found
+    int matches_count;      // number of log records at terminal node
+};
+
+struct TrieTraversalPath {
+    std::vector<TrieKeywordTrace> keyword_traces;
+};
+
 struct TrieNode {
     TrieNode* children[ALPHABET_SIZE];
     bool isEndOfWord;
@@ -23,6 +43,7 @@ class Trie {
 private:
     TrieNode* root;
     int nodesAccessed;
+    TrieTraversalPath traversalPath;
     
     void toLowerCase(std::string& str);
 
@@ -40,6 +61,7 @@ public:
     std::vector<LogRecord*> search(const std::string& keyword);
     
     int getNodesAccessed() const;
+    const TrieTraversalPath& getTraversalPath() const;
 };
 
 #endif

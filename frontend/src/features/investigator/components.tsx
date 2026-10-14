@@ -205,21 +205,25 @@ export function TreeGraphic({
   events = [],
   range = [],
   keywords = [],
+  dsaMetrics,
 }: {
-  type?: "bplus" | "trie" | "heap";
-  large?: boolean;
-  active?: boolean;
-  term?: string;
-  events?: LogRecord[];
-  range?: string[];
-  keywords?: string[];
+  type?: "bplus" | "trie" | "heap" | undefined;
+  large?: boolean | undefined;
+  active?: boolean | undefined;
+  term?: string | undefined;
+  events?: LogRecord[] | undefined;
+  range?: string[] | undefined;
+  keywords?: string[] | undefined;
+  dsaMetrics?: import("./mock-api").DSAMetrics | undefined;
 }) {
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
-  const handleZoomIn = () => setTransform(prev => ({ ...prev, scale: Math.min(prev.scale + 0.2, 4) }));
-  const handleZoomOut = () => setTransform(prev => ({ ...prev, scale: Math.max(prev.scale - 0.2, 0.5) }));
+  const handleZoomIn = () =>
+    setTransform((prev) => ({ ...prev, scale: Math.min(prev.scale + 0.2, 4) }));
+  const handleZoomOut = () =>
+    setTransform((prev) => ({ ...prev, scale: Math.max(prev.scale - 0.2, 0.5) }));
 
   const handlePointerDown = (e: React.PointerEvent) => {
     setIsDragging(true);
@@ -244,11 +248,58 @@ export function TreeGraphic({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
-      style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+      style={{ cursor: isDragging ? "grabbing" : "grab" }}
     >
-      <div style={{ position: "absolute", right: "10px", bottom: "10px", display: "flex", gap: "5px", zIndex: 10 }}>
-        <button onPointerDown={e => { e.stopPropagation(); handleZoomOut(); }} style={{ background: "var(--background)", border: "1px solid var(--border)", width: "30px", height: "30px", borderRadius: "4px", color: "var(--foreground)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>-</button>
-        <button onPointerDown={e => { e.stopPropagation(); handleZoomIn(); }} style={{ background: "var(--background)", border: "1px solid var(--border)", width: "30px", height: "30px", borderRadius: "4px", color: "var(--foreground)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+      <div
+        style={{
+          position: "absolute",
+          right: "10px",
+          bottom: "10px",
+          display: "flex",
+          gap: "5px",
+          zIndex: 10,
+        }}
+      >
+        <button
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            handleZoomOut();
+          }}
+          style={{
+            background: "var(--background)",
+            border: "1px solid var(--border)",
+            width: "30px",
+            height: "30px",
+            borderRadius: "4px",
+            color: "var(--foreground)",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          -
+        </button>
+        <button
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            handleZoomIn();
+          }}
+          style={{
+            background: "var(--background)",
+            border: "1px solid var(--border)",
+            width: "30px",
+            height: "30px",
+            borderRadius: "4px",
+            color: "var(--foreground)",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          +
+        </button>
       </div>
       <svg
         width="100%"
@@ -256,175 +307,404 @@ export function TreeGraphic({
         className={`tree-graphic ${large ? "tree-large" : ""}`}
         role="img"
       >
-        <g style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`, transformOrigin: '0 0' }}>
+        <g
+          style={{
+            transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
+            transformOrigin: "0 0",
+          }}
+        >
           {content}
         </g>
       </svg>
     </div>
   );
 
-  // ── Dynamic B+ Tree ──────────────────────────────────────
+  const tp = dsaMetrics?.traversal_path;
+
+  // ── B+ Tree: Traversed Path Rendering ────────────────────
   if (type === "bplus") {
-    const hasData = range[0] !== "—";
+    if (tp && tp.type === "bplus" && tp.nodes.length > 0) {
+      const nodes = tp.nodes;
+      const edges = tp.edges;
 
-    const leafTimes: string[] = [];
-    if (hasData && events.length > 0) {
-      // Sort chronologically to satisfy B+ tree properties
-      const sortedEvents = [...events].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-      const seen = new Set<string>();
-      for (const e of sortedEvents) {
-        const t = e.timestamp.slice(11, 19); // Use full HH:MM:SS
-        if (!seen.has(t)) { seen.add(t); leafTimes.push(t); }
-      }
-    }
-
-    const validLeaves = leafTimes.length;
-
-    const nodes: string[] = [];
-    const positions: [number, number][] = [];
-    const edges: [number, number][] = [];
-    const nodeActive: boolean[] = [];
-
-    if (hasData && validLeaves > 0) {
-      // Build leaves
-      const leafWidth = 110;
-      const totalWidth = Math.max(710, validLeaves * leafWidth);
-      const startX = 60;
-
-      const leafY = 185;
-      const innerY = 110;
+      // Layout: position nodes by type and index
+      const positions = new Map<string, [number, number]>();
       const rootY = 35;
+      const internalY = 110;
+      const leafY = 200;
 
-      // Number of inner nodes (each has up to 3 children)
-      const innerCount = Math.ceil(validLeaves / 3);
+      const internalCount = 0;
+      const leafCount = 0;
+      const leafNodes = nodes.filter((n) => n.type === "leaf");
+      const internalNodes = nodes.filter((n) => n.type === "internal");
 
-      // Root
-      nodes.push(`Time Range`);
-      positions.push([totalWidth / 2, rootY]);
-      nodeActive.push(active);
-      const rootIdx = 0;
+      // Position leaves evenly
+      const leafWidth = 130;
+      const totalLeafWidth = Math.max(710, leafNodes.length * leafWidth);
+      const leafStartX = 60;
+      leafNodes.forEach((n, i) => {
+        positions.set(n.id, [leafStartX + i * leafWidth, leafY]);
+      });
 
-      // Inner nodes
-      const innerStartIndex = nodes.length;
-      for (let i = 0; i < innerCount; i++) {
-        const firstChildIdx = i * 3;
-        const lastChildIdx = Math.min((i + 1) * 3 - 1, validLeaves - 1);
-        nodes.push(`${leafTimes[lastChildIdx]}`);
+      // Position internals centered above their leaf children
+      internalNodes.forEach((n, i) => {
+        // Find connected leaf children from edges
+        const childEdges = edges.filter((e) => e.from === n.id);
+        const childPositions = childEdges.map((e) => positions.get(e.to)).filter(Boolean) as [
+          number,
+          number,
+        ][];
+        if (childPositions.length > 0) {
+          const avgX = childPositions.reduce((s, p) => s + p[0], 0) / childPositions.length;
+          positions.set(n.id, [avgX, internalY]);
+        } else {
+          positions.set(n.id, [totalLeafWidth / 2 + i * 150, internalY]);
+        }
+      });
 
-        // center above its children
-        const childXStart = startX + firstChildIdx * leafWidth;
-        const childXEnd = startX + lastChildIdx * leafWidth;
-        positions.push([(childXStart + childXEnd) / 2, innerY]);
-        nodeActive.push(active);
-        edges.push([rootIdx, nodes.length - 1]);
+      // Position root centered above everything
+      const rootNode = nodes.find((n) => n.type === "root");
+      if (rootNode) {
+        positions.set(rootNode.id, [totalLeafWidth / 2, rootY]);
       }
 
-      // Leaves
-      for (let i = 0; i < validLeaves; i++) {
-        nodes.push(leafTimes[i]!);
-        positions.push([startX + i * leafWidth, leafY]);
-        nodeActive.push(active);
+      const svgWidth = Math.max(710, leafNodes.length * leafWidth + 120);
 
-        const parentInnerIdx = innerStartIndex + Math.floor(i / 3);
-        edges.push([parentInnerIdx, nodes.length - 1]);
-      }
+      return renderSvg(
+        <>
+          {/* Edges */}
+          {edges.map((e, i) => {
+            const from = positions.get(e.from);
+            const to = positions.get(e.to);
+            if (!from || !to) return null;
+            const isLeafLink = e.label.includes("next pointer");
+            return (
+              <g key={i}>
+                <path
+                  d={
+                    isLeafLink
+                      ? `M ${from[0] + 55} ${from[1]} L ${to[0] - 55} ${to[1]}`
+                      : `M ${from[0]} ${from[1] + 18} L ${to[0]} ${to[1] - 18}`
+                  }
+                  className={active ? "tree-edge edge-active" : "tree-edge"}
+                  strokeDasharray={isLeafLink ? "4,3" : undefined}
+                  markerEnd={isLeafLink ? undefined : "url(#arrowhead)"}
+                />
+                {!isLeafLink && (
+                  <text
+                    x={(from[0] + to[0]) / 2 + 8}
+                    y={(from[1] + to[1]) / 2}
+                    fontSize="9"
+                    fill="var(--muted-foreground)"
+                    textAnchor="start"
+                  >
+                    {e.label.length > 20 ? e.label.slice(0, 20) + "…" : e.label}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+          {/* Leaf sibling chain line */}
+          {leafNodes.length > 1 && (
+            <path
+              d={`M ${leafStartX} ${leafY + 22} H ${leafStartX + (leafNodes.length - 1) * leafWidth}`}
+              className="tree-leaf-link"
+            />
+          )}
+          {/* Nodes */}
+          {nodes.map((n) => {
+            const pos = positions.get(n.id);
+            if (!pos) return null;
+            const [x, y] = pos;
+            const hasMatches = n.matched_keys.length > 0;
+            const label =
+              n.type === "root" ? "Time Index Root" : n.keys.map((k) => k.slice(11, 19)).join(", ");
+            const nodeWidth = Math.max(100, label.length * 7 + 20);
+            return (
+              <g
+                key={n.id}
+                className={`tree-node ${active ? "node-active" : ""} ${hasMatches ? "node-matched" : ""}`}
+              >
+                <rect
+                  x={x - nodeWidth / 2}
+                  y={y - 17}
+                  width={nodeWidth}
+                  height={large ? 44 : 34}
+                  rx="5"
+                />
+                <text x={x} y={y + 4} textAnchor="middle" fontSize="11">
+                  {label}
+                </text>
+                {hasMatches && large && (
+                  <text x={x} y={y + 22} textAnchor="middle" className="node-subtext" fontSize="9">
+                    {n.matched_keys.length} match{n.matched_keys.length > 1 ? "es" : ""}
+                  </text>
+                )}
+                {n.type !== "root" && n.type !== "leaf" && n.chosen_branch >= 0 && (
+                  <text x={x + nodeWidth / 2 + 4} y={y - 8} fontSize="8" fill="var(--primary)">
+                    ↓{n.chosen_branch}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+          {/* Arrow marker definition */}
+          <defs>
+            <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="var(--primary)" />
+            </marker>
+          </defs>
+        </>,
+        `-50 -20 ${svgWidth} ${large ? 320 : 280}`,
+      );
     }
 
-    const svgWidth = Math.max(710, validLeaves * 110 + 100);
-
+    // Fallback: no traversal data yet
     return renderSvg(
-      <>
-        {edges.map(([a, b]) => {
-          if (!nodes[a] || !nodes[b] || !positions[a] || !positions[b]) return null;
-          const pA = positions[a]!; const pB = positions[b]!;
-          return <path key={`${a}-${b}`} d={`M ${pA[0]} ${pA[1] + 16} L ${pB[0]} ${pB[1] - 16}`}
-            className={active ? "tree-edge edge-active" : "tree-edge"} />;
-        })}
-        {nodes.map((node, i) => {
-          if (!node || !positions[i]) return null;
-          const [x, y] = positions[i]!;
-          const isActive = nodeActive[i];
-          return (
-            <g key={i} className={`tree-node ${isActive ? "node-active" : ""}`}>
-              <rect x={x - 50} y={y - 17} width={100} height={34} rx="5" />
-              <text x={x} y={y + 4} textAnchor="middle" fontSize="12">{node}</text>
-            </g>
-          );
-        })}
-        {validLeaves > 1 && <path d={`M 60 218 H\${60 + ((validLeaves - 1) * 110)}`} className="tree-leaf-link" />}
-      </>,
-      `-50 -50 \${svgWidth} 335`
+      <text x="350" y="120" textAnchor="middle" fill="var(--muted-foreground)" fontSize="13">
+        Awaiting traversal data from C++ engine
+      </text>,
+      "-50 -50 710 280",
     );
   }
 
-  // ── Dynamic Trie ─────────────────────────────────────────
+  // ── Trie: Traversed Path Rendering ────────────────────────
   if (type === "trie") {
-    const kws = keywords.length > 0 ? keywords.slice(0, 3) : (term ? [term] : []);
-    const hasData = kws.length > 0 && kws[0] !== "";
+    if (tp && tp.type === "trie" && tp.keyword_traces.length > 0) {
+      const traces = tp.keyword_traces;
+      const nodesArr: {
+        id: string;
+        label: string;
+        isRoot?: boolean | undefined;
+        isMiss?: boolean | undefined;
+        isTerminal?: boolean | undefined;
+        matchCount?: number | undefined;
+      }[] = [];
+      const positionsMap = new Map<string, [number, number]>();
+      const edgesArr: { from: string; to: string }[] = [];
 
-    const nodes: string[] = hasData ? ["ROOT"] : [];
-    const positions: [number, number][] = hasData ? [[300, 35]] : [];
-    const edges: [number, number][] = [];
+      // Root node
+      nodesArr.push({ id: "root", label: "ROOT", isRoot: true });
+      positionsMap.set("root", [350, 35]);
 
-    if (hasData) {
-      // Dynamically spread the root branches evenly
-      const startXs = kws.map((_, i) => {
-        return (600 / (kws.length + 1)) * (i + 1);
-      });
+      // Spread keyword branches evenly
+      const branchXs = traces.map((_, i) => (700 / (traces.length + 1)) * (i + 1));
 
-      kws.forEach((kw, kwIdx) => {
-        if (!kw) return;
+      traces.forEach((kt, kwIdx) => {
+        let parentId = "root";
+        const baseX = branchXs[kwIdx] ?? 350;
 
-        let parentIdx = 0; // ROOT
-        const currentX = startXs[kwIdx] ?? 300;
+        kt.steps.forEach((step, depth) => {
+          const nodeId = `kw${kwIdx}-d${depth}`;
+          const isLast = depth === kt.steps.length - 1;
+          const isTerminal = isLast && kt.terminal_hit;
+          const isMiss = !step.found;
 
-        // Break into: char 1, char 2, remainder (creates the prefix depth effect)
-        const parts = [
-          kw.slice(0, 1),
-          kw.slice(1, 2),
-          kw.slice(2)
-        ].filter(Boolean);
-
-        parts.forEach((part, depth) => {
-          nodes.push(part);
-          const myIdx = nodes.length - 1;
-          positions.push([currentX, 95 + (depth * 50)]);
-          edges.push([parentIdx, myIdx]);
-          parentIdx = myIdx;
+          nodesArr.push({
+            id: nodeId,
+            label: step.char,
+            isMiss,
+            isTerminal,
+            matchCount: isTerminal ? kt.matches_count : undefined,
+          });
+          positionsMap.set(nodeId, [baseX, 90 + depth * 42]);
+          edgesArr.push({ from: parentId, to: nodeId });
+          parentId = nodeId;
         });
       });
+
+      return renderSvg(
+        <>
+          {edgesArr.map((e, i) => {
+            const from = positionsMap.get(e.from);
+            const to = positionsMap.get(e.to);
+            if (!from || !to) return null;
+            return (
+              <path
+                key={i}
+                d={`M ${from[0]} ${from[1] + 16} L ${to[0]} ${to[1] - 16}`}
+                className={active ? "tree-edge edge-active" : "tree-edge"}
+              />
+            );
+          })}
+          {nodesArr.map((n) => {
+            const pos = positionsMap.get(n.id);
+            if (!pos) return null;
+            const [x, y] = pos;
+            const w = n.isRoot ? 80 : n.isTerminal ? 50 : 36;
+            return (
+              <g
+                key={n.id}
+                className={`tree-node ${active ? "node-active" : ""} ${n.isMiss ? "node-miss" : ""} ${n.isTerminal ? "node-terminal" : ""}`}
+              >
+                <rect x={x - w / 2} y={y - 15} width={w} height={30} rx={n.isRoot ? 5 : 15} />
+                <text
+                  x={x}
+                  y={y + 4}
+                  textAnchor="middle"
+                  fontSize={n.isRoot ? 12 : 13}
+                  fontWeight={n.isTerminal ? "bold" : "normal"}
+                >
+                  {n.label}
+                </text>
+                {n.isTerminal && n.matchCount !== undefined && (
+                  <text x={x} y={y + 24} textAnchor="middle" fontSize="9" fill="var(--primary)">
+                    {n.matchCount} match{n.matchCount !== 1 ? "es" : ""}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+        </>,
+        `-50 -20 750 ${90 + Math.max(...traces.map((t) => t.steps.length)) * 42 + 40}`,
+      );
     }
 
+    // Fallback
     return renderSvg(
-      <>
-        {edges.map(([a, b]) => {
-          if (!nodes[a] || !nodes[b] || !positions[a] || !positions[b]) return null;
-          const pA = positions[a]!; const pB = positions[b]!;
-          return <path key={`${a}-${b}`} d={`M ${pA[0]} ${pA[1] + 16} L ${pB[0]} ${pB[1] - 16}`}
-            className={active ? "tree-edge edge-active" : "tree-edge"} />;
-        })}
-        {nodes.map((node, i) => {
-          if (!node || !positions[i]) return null;
-          const [x, y] = positions[i]!;
-          return (
-            <g key={i} className={`tree-node ${active ? "node-active" : ""}`}>
-              <rect x={x - (node.length > 8 ? 60 : 44)} y={y - 17} width={node.length > 8 ? 120 : 88} height={34} rx="5" />
-              <text x={x} y={y + 4} textAnchor="middle">{node}</text>
-            </g>
-          );
-        })}
-      </>,
-      "-50 -50 710 360"
+      <text x="350" y="120" textAnchor="middle" fill="var(--muted-foreground)" fontSize="13">
+        Awaiting traversal data from C++ engine
+      </text>,
+      "-50 -50 710 280",
     );
   }
 
-  // ── Dynamic Heap ─────────────────────────────────────────
-  const heapItems = events; // Render all returned events
+  // ── Heap: Extraction Cascade Rendering ───────────────────
+  if (tp && tp.type === "heap" && tp.extractions.length > 0) {
+    const extractions = tp.extractions;
+    // Render as a vertical cascade: each extraction is a row showing extracted item + sift path
+    const rowHeight = large ? 65 : 50;
+    const startY = 30;
+    const svgHeight = startY + extractions.length * rowHeight + 40;
+
+    return renderSvg(
+      <>
+        {/* Header labels */}
+        <text x="60" y="18" fontSize="10" fill="var(--muted-foreground)" fontWeight="bold">
+          RANK
+        </text>
+        <text x="160" y="18" fontSize="10" fill="var(--muted-foreground)" fontWeight="bold">
+          EXTRACTED
+        </text>
+        <text x="380" y="18" fontSize="10" fill="var(--muted-foreground)" fontWeight="bold">
+          SCORE
+        </text>
+        <text x="480" y="18" fontSize="10" fill="var(--muted-foreground)" fontWeight="bold">
+          SIFT-DOWN PATH
+        </text>
+
+        {extractions.map((ex, i) => {
+          const y = startY + i * rowHeight + 20;
+          const isCritical = ex.extracted_severity === "CRITICAL";
+
+          return (
+            <g key={i}>
+              {/* Rank */}
+              <g className={`tree-node ${active ? "node-active" : ""}`}>
+                <rect x="35" y={y - 14} width="50" height="28" rx="14" />
+                <text x="60" y={y + 4} textAnchor="middle" fontSize="12" fontWeight="bold">
+                  #{ex.rank}
+                </text>
+              </g>
+
+              {/* Extracted item */}
+              <g
+                className={`tree-node ${active ? "node-active" : ""} ${isCritical ? "node-critical" : ""}`}
+              >
+                <rect x="110" y={y - 14} width="140" height={large ? 42 : 28} rx="5" />
+                <text x="180" y={y + 4} textAnchor="middle" fontSize="11">
+                  {ex.extracted_severity} · {ex.extracted_server}
+                </text>
+                {large && (
+                  <text
+                    x="180"
+                    y={y + 20}
+                    textAnchor="middle"
+                    className="node-subtext"
+                    fontSize="9"
+                  >
+                    Score: {ex.extracted_score}
+                  </text>
+                )}
+              </g>
+
+              {/* Score badge */}
+              <text
+                x="380"
+                y={y + 4}
+                textAnchor="middle"
+                fontSize="13"
+                fontWeight="bold"
+                fill="var(--primary)"
+              >
+                {ex.extracted_score}
+              </text>
+
+              {/* Sift-down mini visualization */}
+              {ex.sift_path.map((sp, j) => {
+                const sx = 460 + j * 55;
+                const swapColor = sp.swapped ? "var(--primary)" : "var(--muted-foreground)";
+                return (
+                  <g key={j}>
+                    {j > 0 && (
+                      <path
+                        d={`M ${sx - 20} ${y} L ${sx - 8} ${y}`}
+                        stroke={swapColor}
+                        strokeWidth="1.5"
+                        markerEnd="url(#sift-arrow)"
+                      />
+                    )}
+                    <rect
+                      x={sx - 8}
+                      y={y - 10}
+                      width="36"
+                      height="20"
+                      rx="3"
+                      fill={sp.swapped ? "var(--primary)" : "var(--muted)"}
+                      opacity={sp.swapped ? 0.25 : 0.15}
+                      stroke={swapColor}
+                      strokeWidth="1"
+                    />
+                    <text x={sx + 10} y={y + 4} textAnchor="middle" fontSize="8" fill={swapColor}>
+                      [{sp.index}]
+                    </text>
+                  </g>
+                );
+              })}
+
+              {/* Row separator */}
+              {i < extractions.length - 1 && (
+                <line
+                  x1="35"
+                  y1={y + rowHeight / 2 + 4}
+                  x2="700"
+                  y2={y + rowHeight / 2 + 4}
+                  stroke="var(--border)"
+                  strokeWidth="0.5"
+                  strokeDasharray="3,3"
+                />
+              )}
+            </g>
+          );
+        })}
+
+        <defs>
+          <marker id="sift-arrow" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
+            <polygon points="0 0, 6 2, 0 4" fill="var(--primary)" />
+          </marker>
+        </defs>
+      </>,
+      `-10 -10 ${460 + Math.max(...extractions.map((e) => e.sift_path.length)) * 55 + 60} ${svgHeight}`,
+    );
+  }
+
+  // Heap fallback: render evidence as simple binary tree (backward compat)
+  const heapItems = events;
   const hasHeapData = heapItems.length > 0;
   const nodeCount = hasHeapData ? heapItems.length : 0;
 
-  const positions: [number, number][] = [];
-  const edges: [number, number][] = [];
+  const fallbackPositions: [number, number][] = [];
+  const fallbackEdges: [number, number][] = [];
 
   if (hasHeapData) {
     for (let i = 0; i < nodeCount; i++) {
@@ -435,30 +715,43 @@ export function TreeGraphic({
       const x = 300 + (positionInLevel - (levelWidth - 1) / 2) * (500 / levelWidth);
       const y = 35 + level * 85;
 
-      positions.push([x, y]);
+      fallbackPositions.push([x, y]);
 
       if (i > 0) {
-        edges.push([Math.floor((i - 1) / 2), i]);
+        fallbackEdges.push([Math.floor((i - 1) / 2), i]);
       }
     }
   }
 
   return renderSvg(
     <>
-      {edges.filter(([, b]) => b < nodeCount).map(([a, b]) => {
-        if (!positions[a] || !positions[b]) return null;
-        const pA = positions[a]!; const pB = positions[b]!;
-        return <path key={`${a}-${b}`} d={`M ${pA[0]} ${pA[1] + 16} L ${pB[0]} ${pB[1] - 16}`}
-          className={active ? "tree-edge edge-active" : "tree-edge"} />;
-      })}
+      {fallbackEdges
+        .filter(([, b]) => b < nodeCount)
+        .map(([a, b]) => {
+          if (!fallbackPositions[a] || !fallbackPositions[b]) return null;
+          const pA = fallbackPositions[a]!;
+          const pB = fallbackPositions[b]!;
+          return (
+            <path
+              key={`${a}-${b}`}
+              d={`M ${pA[0]} ${pA[1] + 16} L ${pB[0]} ${pB[1] - 16}`}
+              className={active ? "tree-edge edge-active" : "tree-edge"}
+            />
+          );
+        })}
       {Array.from({ length: nodeCount }).map((_, i) => {
-        if (!positions[i]) return null;
-        const [x, y] = positions[i]!;
+        if (!fallbackPositions[i]) return null;
+        const [x, y] = fallbackPositions[i]!;
         const item = heapItems[i];
         return (
-          <g key={i} className={`tree-node ${active ? "node-active" : ""} ${item && (item.severity === "CRITICAL") ? "node-critical" : ""}`}>
+          <g
+            key={i}
+            className={`tree-node ${active ? "node-active" : ""} ${item && item.severity === "CRITICAL" ? "node-critical" : ""}`}
+          >
             <rect x={x - 44} y={y - 17} width={88} height={large ? 59 : 34} rx="5" />
-            <text x={x} y={y + 4} textAnchor="middle">{item?.severity}</text>
+            <text x={x} y={y + 4} textAnchor="middle">
+              {item?.severity}
+            </text>
             {large && (
               <>
                 <text x={x} y={y + 20} textAnchor="middle" className="node-subtext">
@@ -472,8 +765,13 @@ export function TreeGraphic({
           </g>
         );
       })}
+      {!hasHeapData && (
+        <text x="350" y="120" textAnchor="middle" fill="var(--muted-foreground)" fontSize="13">
+          Awaiting traversal data from C++ engine
+        </text>
+      )}
     </>,
-    `-50 -50 710 ${large ? 380 : 335}`
+    `-50 -50 710 ${large ? 380 : 335}`,
   );
 }
 export function Pipeline({
@@ -488,7 +786,10 @@ export function Pipeline({
   const isDone = (s: number) => step > s || (!processing && !error);
   const isActive = (s: number) => step === s && processing;
 
-  const getIcon = (s: number, DefaultIcon: any) => {
+  const getIcon = (
+    s: number,
+    DefaultIcon: React.ComponentType<{ size?: number; className?: string }>,
+  ) => {
     if (error && step === s) return <AlertTriangle size={15} className="text-destructive" />;
     if (isActive(s)) return <Loader2 size={15} className="spin text-primary" />;
     if (isDone(s)) return <CircleCheck size={15} className="text-success" />;

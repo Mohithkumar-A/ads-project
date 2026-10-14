@@ -19,11 +19,11 @@ export function BPlusPage() {
   const used = result?.tool_call?.bplus?.used ?? false;
   const range =
     used && result?.tool_call?.bplus?.ranges && result.tool_call.bplus.ranges.length > 0
-      ? result.tool_call.bplus.ranges.map(r => `${r.start_time}-${r.end_time}`)
+      ? result.tool_call.bplus.ranges.map((r) => `${r.start_time}-${r.end_time}`)
       : ["—"];
   const metrics = result?.dsa_metrics?.find((m) => m.name === "B+ Tree");
   const evidence = used && result?.evidence ? result.evidence : [];
-  
+
   // To visualize the full B+ Tree accurately, we pass all available logs,
   // not just the Top K evidence returned by the pipeline.
   const allLogs = parseLogs(store.text);
@@ -46,11 +46,30 @@ export function BPlusPage() {
           </SectionHeading>
           <div className="visualization-body relative overflow-hidden cursor-move">
             {!used && result && (
-              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.4)", zIndex: 10 }}>
-                <p style={{ color: "var(--muted-foreground)", fontWeight: 500 }}>Bypassed by LLM (No time ranges requested)</p>
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "rgba(0,0,0,0.4)",
+                  zIndex: 10,
+                }}
+              >
+                <p style={{ color: "var(--muted-foreground)", fontWeight: 500 }}>
+                  Bypassed by LLM (No time ranges requested)
+                </p>
               </div>
             )}
-            <TreeGraphic type="bplus" large active={used} range={range} events={allLogs} />
+            <TreeGraphic
+              type="bplus"
+              large
+              active={used}
+              range={range}
+              events={allLogs}
+              dsaMetrics={metrics}
+            />
           </div>
           <div className="visualization-legend">
             <span className="legend-key">
@@ -134,11 +153,23 @@ export function TriePage() {
           </SectionHeading>
           <div className="visualization-body relative overflow-hidden cursor-move">
             {!used && result && (
-              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.4)", zIndex: 10 }}>
-                <p style={{ color: "var(--muted-foreground)", fontWeight: 500 }}>Bypassed by LLM (No keywords requested)</p>
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "rgba(0,0,0,0.4)",
+                  zIndex: 10,
+                }}
+              >
+                <p style={{ color: "var(--muted-foreground)", fontWeight: 500 }}>
+                  Bypassed by LLM (No keywords requested)
+                </p>
               </div>
             )}
-            <TreeGraphic type="trie" large active={used} keywords={terms} />
+            <TreeGraphic type="trie" large active={used} keywords={terms} dsaMetrics={metrics} />
           </div>
           <div className="visualization-legend">
             <span className="legend-key">
@@ -224,7 +255,13 @@ export function HeapPage() {
             <span className="section-tag">SCALABLE · ZOOM/PAN SUPPORTED</span>
           </SectionHeading>
           <div className="visualization-body relative overflow-hidden cursor-move">
-            <TreeGraphic type="heap" large active={used} events={evidence.slice(0, 7)} />
+            <TreeGraphic
+              type="heap"
+              large
+              active={used}
+              events={evidence.slice(0, 7)}
+              dsaMetrics={metrics}
+            />
           </div>
           <div className="visualization-legend">
             <span className="legend-key">

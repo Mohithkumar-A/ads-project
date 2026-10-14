@@ -85,25 +85,51 @@ std::vector<LogRecord*> Trie::search(const std::string& keyword) {
     std::string lowerKey = keyword;
     toLowerCase(lowerKey);
     
+    TrieKeywordTrace kwTrace;
+    kwTrace.keyword = keyword;
+    kwTrace.terminal_hit = false;
+    kwTrace.matches_count = 0;
+
     TrieNode* cursor = root;
     nodesAccessed++;
     
-    for (char c : lowerKey) {
+    for (size_t i = 0; i < lowerKey.size(); i++) {
+        char c = lowerKey[i];
         int index = static_cast<unsigned char>(c);
+
+        TrieTraceStep step;
+        step.character = c;
+        step.depth = static_cast<int>(i + 1);
+
         if (cursor->children[index] == nullptr) {
-            return result; // Word not found
+            step.found = false;
+            kwTrace.steps.push_back(step);
+            // Word not found — record the miss and stop
+            traversalPath.keyword_traces.push_back(kwTrace);
+            return result;
         }
+
+        step.found = true;
+        kwTrace.steps.push_back(step);
         cursor = cursor->children[index];
         nodesAccessed++;
     }
     
     if (cursor != nullptr && cursor->isEndOfWord) {
         result = cursor->logs;
+        kwTrace.terminal_hit = true;
+        kwTrace.matches_count = static_cast<int>(cursor->logs.size());
     }
-    
+
+    traversalPath.keyword_traces.push_back(kwTrace);
     return result;
 }
 
 int Trie::getNodesAccessed() const {
     return nodesAccessed;
 }
+
+const TrieTraversalPath& Trie::getTraversalPath() const {
+    return traversalPath;
+}
+

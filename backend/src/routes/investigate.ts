@@ -125,6 +125,10 @@ router.post(
           root_cause: "N/A",
           possible_fix: "N/A",
           key_findings: ["No relevant evidence found in the logs."],
+          non_technical_summary: "No relevant events were found matching your query.",
+          technical_root_cause: "N/A",
+          immediate_mitigation: "N/A",
+          permanent_fix: "N/A",
         };
       } else {
         console.log(`[Investigate] Phase 2: Generating summary...`);
@@ -144,6 +148,10 @@ router.post(
         dsa_metrics: engineResult.dsa_metrics,
         tool_call: toolCall,
         processing_time_ms: Date.now() - startTime,
+        non_technical_summary: synthesis.non_technical_summary,
+        technical_root_cause: synthesis.technical_root_cause,
+        immediate_mitigation: synthesis.immediate_mitigation,
+        permanent_fix: synthesis.permanent_fix,
       };
 
       console.log(
@@ -177,7 +185,7 @@ router.get("/health", (_req: Request, res: Response) => {
   res.json({
     status: "ok",
     engine_available: process.env.ENGINE_AVAILABLE === "true",
-    llm_available: Boolean(process.env.OLLAMA_URL),
+    llm_available: Boolean(process.env.OLLAMA_URL || "http://127.0.0.1:11434"),
     timestamp: new Date().toISOString(),
   });
 });
