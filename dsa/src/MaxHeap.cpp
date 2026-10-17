@@ -148,7 +148,19 @@ int MaxHeap::size() const {
 std::vector<LogRecord*> MaxHeap::getTopK(int k) {
     nodesAccessed = 0;
     traversalPath.extractions.clear();
+    traversalPath.initial_nodes.clear();
     traversalPath.total_heap_size = static_cast<int>(heap.size());
+
+    int nodeLimit = std::min(static_cast<int>(heap.size()), 15);
+    for (int i = 0; i < nodeLimit; i++) {
+        HeapNodeInfo info;
+        info.index = i;
+        info.severity = heap[i]->severity;
+        info.server = heap[i]->server;
+        info.score = heap[i]->priorityScore;
+        info.message = heap[i]->message;
+        traversalPath.initial_nodes.push_back(info);
+    }
 
     std::vector<LogRecord*> result;
     

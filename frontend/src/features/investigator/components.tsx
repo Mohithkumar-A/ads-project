@@ -219,6 +219,7 @@ export function TreeGraphic({
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [selectedHeapRank, setSelectedHeapRank] = useState<number>(1);
 
   const handleZoomIn = () =>
     setTransform((prev) => ({ ...prev, scale: Math.min(prev.scale + 0.2, 4) }));
@@ -241,7 +242,7 @@ export function TreeGraphic({
     e.currentTarget.releasePointerCapture(e.pointerId);
   };
 
-  const renderSvg = (content: ReactNode, viewBox: string) => (
+  const renderSvg = (content: ReactNode, viewBox: string, extraOverlay?: ReactNode) => (
     <div
       className="w-full h-full overflow-hidden touch-none relative"
       onPointerDown={handlePointerDown}
@@ -250,6 +251,7 @@ export function TreeGraphic({
       onPointerCancel={handlePointerUp}
       style={{ cursor: isDragging ? "grabbing" : "grab" }}
     >
+      {extraOverlay}
       <div
         style={{
           position: "absolute",
@@ -304,6 +306,7 @@ export function TreeGraphic({
       <svg
         width="100%"
         height="100%"
+        viewBox={viewBox}
         className={`tree-graphic ${large ? "tree-large" : ""}`}
         role="img"
       >
@@ -569,209 +572,304 @@ export function TreeGraphic({
     );
   }
 
-  // ── Heap: Extraction Cascade Rendering ───────────────────
-  if (tp && tp.type === "heap" && tp.extractions.length > 0) {
-    const extractions = tp.extractions;
-    // Render as a vertical cascade: each extraction is a row showing extracted item + sift path
-    const rowHeight = large ? 65 : 50;
-    const startY = 30;
-    const svgHeight = startY + extractions.length * rowHeight + 40;
+  // ── Heap: Complete Binary Tree with Sift-Down Traversal ────
+  const heapControls =
+    tp && tp.type === "heap" && tp.extractions.length > 0 ? (
+      <div
+        style={{
+          position: "absolute",
+          top: "10px",
+          left: "10px",
+          right: "80px",
+          display: "flex",
+          gap: "6px",
+          flexWrap: "wrap",
+          alignItems: "center",
+          zIndex: 10,
+        }}
+      >
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => setSelectedHeapRank(0)}
+          style={{
+            background: selectedHeapRank === 0 ? "var(--primary)" : "var(--card)",
+            color: selectedHeapRank === 0 ? "#000" : "var(--foreground)",
+            border: "1px solid var(--border)",
+            padding: "3px 8px",
+            borderRadius: "4px",
+            fontSize: "11px",
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          Full Tree Overview
+        </button>
+        {tp.extractions.slice(0, 6).map((ex) => (
+          <button
+            key={ex.rank}
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => setSelectedHeapRank(ex.rank)}
+            style={{
+              background: selectedHeapRank === ex.rank ? "var(--primary)" : "var(--card)",
+              color: selectedHeapRank === ex.rank ? "#000" : "var(--foreground)",
+              border: "1px solid var(--border)",
+              padding: "3px 8px",
+              borderRadius: "4px",
+              fontSize: "11px",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            #{ex.rank} Sift ({ex.extracted_server})
+          </button>
+        ))}
+      </div>
+    ) : null;
 
+  // 1. Collect nodes to display
+  const heapNodes: import("./mock-api").HeapNodeInfo[] = [];
+
+  if (tp && tp.type === "heap" && tp.initial_nodes && tp.initial_nodes.length > 0) {
+    heapNodes.push(...tp.initial_nodes);
+  } else if (events && events.length > 0) {
+    events.slice(0, 15).forEach((ev, idx) => {
+      heapNodes.push({
+        index: idx,
+        severity: ev.severity,
+        server: ev.server,
+        score: ev.priorityScore ?? 0,
+        message: ev.message,
+      });
+    });
+  }
+
+  const nodeCount = Math.min(heapNodes.length, 15);
+  if (nodeCount === 0) {
     return renderSvg(
-      <>
-        {/* Header labels */}
-        <text x="60" y="18" fontSize="10" fill="var(--muted-foreground)" fontWeight="bold">
-          RANK
-        </text>
-        <text x="160" y="18" fontSize="10" fill="var(--muted-foreground)" fontWeight="bold">
-          EXTRACTED
-        </text>
-        <text x="380" y="18" fontSize="10" fill="var(--muted-foreground)" fontWeight="bold">
-          SCORE
-        </text>
-        <text x="480" y="18" fontSize="10" fill="var(--muted-foreground)" fontWeight="bold">
-          SIFT-DOWN PATH
-        </text>
-
-        {extractions.map((ex, i) => {
-          const y = startY + i * rowHeight + 20;
-          const isCritical = ex.extracted_severity === "CRITICAL";
-
-          return (
-            <g key={i}>
-              {/* Rank */}
-              <g className={`tree-node ${active ? "node-active" : ""}`}>
-                <rect x="35" y={y - 14} width="50" height="28" rx="14" />
-                <text x="60" y={y + 4} textAnchor="middle" fontSize="12" fontWeight="bold">
-                  #{ex.rank}
-                </text>
-              </g>
-
-              {/* Extracted item */}
-              <g
-                className={`tree-node ${active ? "node-active" : ""} ${isCritical ? "node-critical" : ""}`}
-              >
-                <rect x="110" y={y - 14} width="140" height={large ? 42 : 28} rx="5" />
-                <text x="180" y={y + 4} textAnchor="middle" fontSize="11">
-                  {ex.extracted_severity} · {ex.extracted_server}
-                </text>
-                {large && (
-                  <text
-                    x="180"
-                    y={y + 20}
-                    textAnchor="middle"
-                    className="node-subtext"
-                    fontSize="9"
-                  >
-                    Score: {ex.extracted_score}
-                  </text>
-                )}
-              </g>
-
-              {/* Score badge */}
-              <text
-                x="380"
-                y={y + 4}
-                textAnchor="middle"
-                fontSize="13"
-                fontWeight="bold"
-                fill="var(--primary)"
-              >
-                {ex.extracted_score}
-              </text>
-
-              {/* Sift-down mini visualization */}
-              {ex.sift_path.map((sp, j) => {
-                const sx = 460 + j * 55;
-                const swapColor = sp.swapped ? "var(--primary)" : "var(--muted-foreground)";
-                return (
-                  <g key={j}>
-                    {j > 0 && (
-                      <path
-                        d={`M ${sx - 20} ${y} L ${sx - 8} ${y}`}
-                        stroke={swapColor}
-                        strokeWidth="1.5"
-                        markerEnd="url(#sift-arrow)"
-                      />
-                    )}
-                    <rect
-                      x={sx - 8}
-                      y={y - 10}
-                      width="36"
-                      height="20"
-                      rx="3"
-                      fill={sp.swapped ? "var(--primary)" : "var(--muted)"}
-                      opacity={sp.swapped ? 0.25 : 0.15}
-                      stroke={swapColor}
-                      strokeWidth="1"
-                    />
-                    <text x={sx + 10} y={y + 4} textAnchor="middle" fontSize="8" fill={swapColor}>
-                      [{sp.index}]
-                    </text>
-                  </g>
-                );
-              })}
-
-              {/* Row separator */}
-              {i < extractions.length - 1 && (
-                <line
-                  x1="35"
-                  y1={y + rowHeight / 2 + 4}
-                  x2="700"
-                  y2={y + rowHeight / 2 + 4}
-                  stroke="var(--border)"
-                  strokeWidth="0.5"
-                  strokeDasharray="3,3"
-                />
-              )}
-            </g>
-          );
-        })}
-
-        <defs>
-          <marker id="sift-arrow" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
-            <polygon points="0 0, 6 2, 0 4" fill="var(--primary)" />
-          </marker>
-        </defs>
-      </>,
-      `-10 -10 ${460 + Math.max(...extractions.map((e) => e.sift_path.length)) * 55 + 60} ${svgHeight}`,
+      <text x="360" y="120" textAnchor="middle" fill="var(--muted-foreground)" fontSize="13">
+        Awaiting traversal data from C++ engine
+      </text>,
+      "-40 -20 800 300",
     );
   }
 
-  // Heap fallback: render evidence as simple binary tree (backward compat)
-  const heapItems = events;
-  const hasHeapData = heapItems.length > 0;
-  const nodeCount = hasHeapData ? heapItems.length : 0;
+  // 2. Compute Tree Coordinates (Complete Binary Tree up to 4 levels)
+  const positions: [number, number, number, number][] = []; // [centerX, centerY, width, height]
 
-  const fallbackPositions: [number, number][] = [];
-  const fallbackEdges: [number, number][] = [];
+  for (let i = 0; i < nodeCount; i++) {
+    const level = Math.floor(Math.log2(i + 1));
+    const posInLevel = i - (Math.pow(2, level) - 1);
 
-  if (hasHeapData) {
-    for (let i = 0; i < nodeCount; i++) {
-      const level = Math.floor(Math.log2(i + 1));
-      const positionInLevel = i - (Math.pow(2, level) - 1);
-      const levelWidth = Math.pow(2, level);
+    let cx = 360;
+    let cy = 75;
+    let w = 114;
+    let h = 50;
 
-      const x = 300 + (positionInLevel - (levelWidth - 1) / 2) * (500 / levelWidth);
-      const y = 35 + level * 85;
+    if (level === 0) {
+      cx = 360;
+      cy = 75;
+      w = 120;
+      h = 52;
+    } else if (level === 1) {
+      cx = posInLevel === 0 ? 210 : 510;
+      cy = 165;
+      w = 110;
+      h = 50;
+    } else if (level === 2) {
+      const xCoords = [125, 295, 425, 595];
+      cx = xCoords[posInLevel] ?? (125 + posInLevel * 160);
+      cy = 255;
+      w = 100;
+      h = 46;
+    } else if (level === 3) {
+      cx = 50 + posInLevel * 88;
+      cy = 340;
+      w = 80;
+      h = 42;
+    }
+    positions.push([cx, cy, w, h]);
+  }
 
-      fallbackPositions.push([x, y]);
-
-      if (i > 0) {
-        fallbackEdges.push([Math.floor((i - 1) / 2), i]);
-      }
+  // 3. Parent-Child Edges in Binary Tree: child i -> parent floor((i-1)/2)
+  const treeEdges: { from: number; to: number }[] = [];
+  for (let i = 1; i < nodeCount; i++) {
+    const parent = Math.floor((i - 1) / 2);
+    if (parent < nodeCount) {
+      treeEdges.push({ from: parent, to: i });
     }
   }
 
+  // 4. Determine Active Sift Path for selected rank
+  const extractions = tp && tp.type === "heap" ? tp.extractions : [];
+  const activeExtraction =
+    selectedHeapRank > 0
+      ? extractions.find((e) => e.rank === selectedHeapRank) ||
+        (selectedHeapRank <= extractions.length ? extractions[selectedHeapRank - 1] : null)
+      : null;
+
+  const siftNodesSet = new Set<number>();
+  const siftEdgeSet = new Set<string>();
+  const siftStepsMap = new Map<number, string>();
+
+  if (activeExtraction) {
+    activeExtraction.sift_path.forEach((sp, stepIdx) => {
+      siftNodesSet.add(sp.index);
+      siftStepsMap.set(sp.index, stepIdx === 0 ? "Root Sift" : `Step ${stepIdx + 1}`);
+      if (sp.swapped && sp.swapped_with !== undefined && sp.swapped_with >= 0) {
+        siftNodesSet.add(sp.swapped_with);
+        siftEdgeSet.add(`${sp.index}-${sp.swapped_with}`);
+        siftEdgeSet.add(`${sp.swapped_with}-${sp.index}`);
+      }
+    });
+  }
+
+  const viewBox =
+    nodeCount > 7 ? "-30 0 780 390" : nodeCount > 3 ? "-30 0 780 310" : "-30 0 780 230";
+
   return renderSvg(
     <>
-      {fallbackEdges
-        .filter(([, b]) => b < nodeCount)
-        .map(([a, b]) => {
-          if (!fallbackPositions[a] || !fallbackPositions[b]) return null;
-          const pA = fallbackPositions[a]!;
-          const pB = fallbackPositions[b]!;
-          return (
-            <path
-              key={`${a}-${b}`}
-              d={`M ${pA[0]} ${pA[1] + 16} L ${pB[0]} ${pB[1] - 16}`}
-              className={active ? "tree-edge edge-active" : "tree-edge"}
-            />
-          );
-        })}
-      {Array.from({ length: nodeCount }).map((_, i) => {
-        if (!fallbackPositions[i]) return null;
-        const [x, y] = fallbackPositions[i]!;
-        const item = heapItems[i];
+      <defs>
+        <marker id="heap-sift-arrow" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
+          <polygon points="0 0, 6 2, 0 4" fill="var(--primary)" />
+        </marker>
+      </defs>
+
+      {/* Info Banner */}
+      {activeExtraction && (
+        <g>
+          <rect
+            x="20"
+            y="12"
+            width="680"
+            height="26"
+            rx="5"
+            fill="color-mix(in oklab, var(--primary) 12%, var(--card))"
+            stroke="var(--primary)"
+            strokeWidth="1"
+          />
+          <text
+            x="360"
+            y="29"
+            textAnchor="middle"
+            fontSize="11"
+            fill="var(--primary)"
+            fontWeight="bold"
+          >
+            Rank #{activeExtraction.rank} Extracted: {activeExtraction.extracted_severity} · {activeExtraction.extracted_server} (Score: {activeExtraction.extracted_score}) — Sift: {activeExtraction.sift_path.map((s) => `[${s.index}]`).join(" ➔ ")}
+          </text>
+        </g>
+      )}
+      {!activeExtraction && (
+        <text x="360" y="26" textAnchor="middle" fontSize="11" fill="var(--muted-foreground)">
+          Complete Binary Max-Heap Tree (Max at Root #0 with Score: {heapNodes[0]?.score ?? "—"})
+        </text>
+      )}
+
+      {/* Tree Edges */}
+      {treeEdges.map(({ from, to }) => {
+        const pP = positions[from];
+        const pC = positions[to];
+        if (!pP || !pC) return null;
+
+        const isSiftEdge = siftEdgeSet.has(`${from}-${to}`);
+        const pY = pP[1] + pP[3] / 2;
+        const cY = pC[1] - pC[3] / 2;
+
+        return (
+          <line
+            key={`edge-${from}-${to}`}
+            x1={pP[0]}
+            y1={pY}
+            x2={pC[0]}
+            y2={cY}
+            className={`tree-edge ${isSiftEdge ? "edge-sift-active edge-active" : active ? "tree-edge" : ""}`}
+            stroke={isSiftEdge ? "var(--primary)" : "var(--border)"}
+            strokeWidth={isSiftEdge ? 2.5 : 1.5}
+            strokeDasharray={isSiftEdge ? "5 3" : undefined}
+            markerEnd={isSiftEdge ? "url(#heap-sift-arrow)" : undefined}
+          />
+        );
+      })}
+
+      {/* Tree Nodes */}
+      {heapNodes.slice(0, nodeCount).map((node, i) => {
+        const pos = positions[i];
+        if (!pos) return null;
+        const [cx, cy, w, h] = pos;
+
+        const isCritical = node.severity === "CRITICAL";
+        const inSift = siftNodesSet.has(i);
+        const stepLabel = siftStepsMap.get(i);
+
         return (
           <g
-            key={i}
-            className={`tree-node ${active ? "node-active" : ""} ${item && item.severity === "CRITICAL" ? "node-critical" : ""}`}
+            key={`heap-node-${i}`}
+            className={`tree-node ${active ? "node-active" : ""} ${isCritical ? "node-critical" : ""} ${inSift ? "node-sift-active" : ""}`}
           >
-            <rect x={x - 44} y={y - 17} width={88} height={large ? 59 : 34} rx="5" />
-            <text x={x} y={y + 4} textAnchor="middle">
-              {item?.severity}
+            <rect
+              x={cx - w / 2}
+              y={cy - h / 2}
+              width={w}
+              height={h}
+              rx={6}
+              stroke={inSift ? "var(--primary)" : undefined}
+              strokeWidth={inSift ? 2.5 : undefined}
+            />
+            {/* Node index */}
+            <text
+              x={cx - w / 2 + 6}
+              y={cy - h / 2 + 12}
+              fontSize="8"
+              fill="var(--muted-foreground)"
+              fontWeight="bold"
+            >
+              #{node.index}
             </text>
-            {large && (
-              <>
-                <text x={x} y={y + 20} textAnchor="middle" className="node-subtext">
-                  Score: {item?.priorityScore ?? "—"}
-                </text>
-                <text x={x} y={y + 34} textAnchor="middle" className="node-subtext">
-                  {item?.server ?? "—"}
-                </text>
-              </>
+
+            {/* Sift step label */}
+            {stepLabel && (
+              <text
+                x={cx + w / 2 - 6}
+                y={cy - h / 2 + 12}
+                textAnchor="end"
+                fontSize="8"
+                fill="var(--primary)"
+                fontWeight="bold"
+              >
+                {stepLabel}
+              </text>
             )}
+
+            {/* Severity */}
+            <text
+              x={cx}
+              y={cy + 1}
+              textAnchor="middle"
+              fontSize={h < 48 ? "9" : "11"}
+              fontWeight="700"
+            >
+              {node.severity}
+            </text>
+
+            {/* Server & Score */}
+            <text
+              x={cx}
+              y={cy + 14}
+              textAnchor="middle"
+              fontSize="8"
+              fill="var(--primary)"
+              fontWeight="bold"
+            >
+              {node.server} · {node.score}
+            </text>
           </g>
         );
       })}
-      {!hasHeapData && (
-        <text x="350" y="120" textAnchor="middle" fill="var(--muted-foreground)" fontSize="13">
-          Awaiting traversal data from C++ engine
-        </text>
-      )}
     </>,
-    `-50 -50 710 ${large ? 380 : 335}`,
+    viewBox,
+    heapControls,
   );
 }
 export function Pipeline({

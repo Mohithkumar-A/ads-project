@@ -25,8 +25,17 @@ struct HeapExtractionTrace {
     std::vector<HeapSiftStep> sift_path;  // the sift-down path after extracting root
 };
 
+struct HeapNodeInfo {
+    int index;
+    std::string severity;
+    std::string server;
+    int score;
+    std::string message;
+};
+
 struct HeapTraversalPath {
     int total_heap_size;    // size of heap before extractions
+    std::vector<HeapNodeInfo> initial_nodes; // binary heap tree before extractions
     std::vector<HeapExtractionTrace> extractions;
 };
 

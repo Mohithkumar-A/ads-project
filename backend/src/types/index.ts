@@ -112,9 +112,18 @@ export interface HeapExtractionTrace {
   sift_path: HeapSiftStep[];
 }
 
+export interface HeapNodeInfo {
+  index: number;
+  severity: string;
+  server: string;
+  score: number;
+  message: string;
+}
+
 export interface HeapTraversalPath {
   type: "heap";
   total_heap_size: number;
+  initial_nodes?: HeapNodeInfo[];
   extractions: HeapExtractionTrace[];
 }
 

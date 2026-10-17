@@ -867,6 +867,21 @@ h1 {
   fill: var(--destructive);
   opacity: 0.7;
 }
+/* Binary Max-Heap sift-down path visualization */
+.edge-sift-active {
+  stroke: var(--primary) !important;
+  stroke-width: 2.5 !important;
+  stroke-dasharray: 6 3;
+}
+.tree-node.node-sift-active rect {
+  stroke: var(--primary) !important;
+  fill: color-mix(in oklab, var(--primary) 18%, var(--card)) !important;
+  stroke-width: 2.5 !important;
+}
+.tree-node.node-sift-active text {
+  fill: var(--primary) !important;
+  font-weight: 700;
+}
 .ads-card-footer {
   border-top: 1px solid var(--border);
   padding-top: 9px;

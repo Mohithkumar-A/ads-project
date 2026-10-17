@@ -134,11 +134,13 @@ int main(int argc, char* argv[]) {
     // Metrics variables
     double bplusTime = 0.0, trieTime = 0.0, heapTime = 0.0;
     int bplusNodes = 0, trieNodes = 0, heapNodes = 0;
+    int bplusResultsCount = 0, trieResultsCount = 0, heapResultsCount = 0;
     
     // Hoisted traversal path data (survives DSA scope destruction)
     BPlusTraversalPath bplusPath;
     TrieTraversalPath triePath;
     HeapTraversalPath heapPath;
+    std::unordered_map<int, int> logMatchDensity;
     
     // Pipeline Step 1: B+ Tree
     if (useBPlus && !bplusRangesRaw.empty()) {
@@ -173,6 +175,7 @@ int main(int argc, char* argv[]) {
         for (auto& pair : uniqueLogs) {
             currentEvidence.push_back(pair.second);
         }
+        bplusResultsCount = static_cast<int>(currentEvidence.size());
         
         auto end = high_resolution_clock::now();
         bplusTime = duration<double, std::milli>(end - start).count();
@@ -191,14 +194,12 @@ int main(int argc, char* argv[]) {
             trie.insertMessage(rec->service, rec);
         }
         
-        // We'll just search for the first key for simplicity in this lab,
-        // or union the results if multiple keys. Let's do union.
-        std::vector<LogRecord*> trieResults;
         std::unordered_map<int, LogRecord*> uniqueResults;
         for (const std::string& key : trieKeys) {
             auto res = trie.search(key);
             for (LogRecord* r : res) {
                 uniqueResults[r->id] = r;
+                logMatchDensity[r->id]++;
             }
             trieNodes += trie.getNodesAccessed();
         }
@@ -207,6 +208,7 @@ int main(int argc, char* argv[]) {
         for (auto& pair : uniqueResults) {
             currentEvidence.push_back(pair.second);
         }
+        trieResultsCount = static_cast<int>(currentEvidence.size());
         
         auto end = high_resolution_clock::now();
         trieTime = duration<double, std::milli>(end - start).count();
@@ -234,13 +236,26 @@ int main(int argc, char* argv[]) {
         
         MaxHeap mh;
         for (LogRecord* rec : currentEvidence) {
-            // Apply dynamic scores based on message contents
+            // Apply keyword match density boost (logs matching multiple keywords get significant bonus)
+            int density = logMatchDensity[rec->id];
+            if (density > 1) {
+                rec->priorityScore += (density - 1) * 1500;
+            }
+
+            // Apply dynamic scores based on message, server, and service contents
             std::string msgLower = rec->message;
             std::transform(msgLower.begin(), msgLower.end(), msgLower.begin(), ::tolower);
+            std::string serverLower = rec->server;
+            std::transform(serverLower.begin(), serverLower.end(), serverLower.begin(), ::tolower);
+            std::string serviceLower = rec->service;
+            std::transform(serviceLower.begin(), serviceLower.end(), serviceLower.begin(), ::tolower);
+
             for (const auto& tagPair : tagsMap) {
                 std::string tagLower = tagPair.first;
                 std::transform(tagLower.begin(), tagLower.end(), tagLower.begin(), ::tolower);
-                if (msgLower.find(tagLower) != std::string::npos || rec->service == tagPair.first) {
+                if (msgLower.find(tagLower) != std::string::npos || 
+                    serverLower.find(tagLower) != std::string::npos ||
+                    serviceLower.find(tagLower) != std::string::npos) {
                     rec->priorityScore += tagPair.second;
                 }
             }
@@ -248,6 +263,7 @@ int main(int argc, char* argv[]) {
         }
         
         currentEvidence = mh.getTopK(heapTopK);
+        heapResultsCount = static_cast<int>(currentEvidence.size());
         
         auto end = high_resolution_clock::now();
         heapTime = duration<double, std::milli>(end - start).count();
@@ -272,7 +288,7 @@ int main(int argc, char* argv[]) {
     std::cout << "      \"used\": " << (useBPlus ? "true" : "false") << ",\n";
     std::cout << "      \"time_ms\": " << bplusTime << ",\n";
     std::cout << "      \"nodes_accessed\": " << bplusNodes << ",\n";
-    std::cout << "      \"results_count\": " << (useBPlus ? currentEvidence.size() : 0) << ",\n";
+    std::cout << "      \"results_count\": " << (useBPlus ? bplusResultsCount : 0) << ",\n";
     
     // B+ Tree traversal_path
     std::cout << "      \"traversal_path\": {\n";
@@ -312,7 +328,7 @@ int main(int argc, char* argv[]) {
     std::cout << "      \"used\": " << (useTrie ? "true" : "false") << ",\n";
     std::cout << "      \"time_ms\": " << trieTime << ",\n";
     std::cout << "      \"nodes_accessed\": " << trieNodes << ",\n";
-    std::cout << "      \"results_count\": " << (useTrie ? currentEvidence.size() : 0) << ",\n";
+    std::cout << "      \"results_count\": " << (useTrie ? trieResultsCount : 0) << ",\n";
     
     // Trie traversal_path
     std::cout << "      \"traversal_path\": {\n";
@@ -343,12 +359,24 @@ int main(int argc, char* argv[]) {
     std::cout << "      \"used\": " << (useHeap ? "true" : "false") << ",\n";
     std::cout << "      \"time_ms\": " << heapTime << ",\n";
     std::cout << "      \"nodes_accessed\": " << heapNodes << ",\n";
-    std::cout << "      \"results_count\": " << (useHeap ? currentEvidence.size() : 0) << ",\n";
+    std::cout << "      \"results_count\": " << (useHeap ? heapResultsCount : 0) << ",\n";
     
     // Heap traversal_path
     std::cout << "      \"traversal_path\": {\n";
     std::cout << "        \"type\": \"heap\",\n";
     std::cout << "        \"total_heap_size\": " << heapPath.total_heap_size << ",\n";
+    std::cout << "        \"initial_nodes\": [\n";
+    for (size_t i = 0; i < heapPath.initial_nodes.size(); i++) {
+        const auto& n = heapPath.initial_nodes[i];
+        std::cout << "          {\"index\":" << n.index 
+                  << ",\"severity\":\"" << escapeJSONString(n.severity) << "\""
+                  << ",\"server\":\"" << escapeJSONString(n.server) << "\""
+                  << ",\"score\":" << n.score
+                  << ",\"message\":\"" << escapeJSONString(n.message) << "\"}";
+        if (i < heapPath.initial_nodes.size() - 1) std::cout << ",";
+        std::cout << "\n";
+    }
+    std::cout << "        ],\n";
     std::cout << "        \"extractions\": [\n";
     for (size_t i = 0; i < heapPath.extractions.size(); i++) {
         const auto& ex = heapPath.extractions[i];

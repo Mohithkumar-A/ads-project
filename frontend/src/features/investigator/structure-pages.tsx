@@ -255,11 +255,28 @@ export function HeapPage() {
             <span className="section-tag">SCALABLE · ZOOM/PAN SUPPORTED</span>
           </SectionHeading>
           <div className="visualization-body relative overflow-hidden cursor-move">
+            {!used && result && (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "rgba(0,0,0,0.4)",
+                  zIndex: 10,
+                }}
+              >
+                <p style={{ color: "var(--muted-foreground)", fontWeight: 500 }}>
+                  Bypassed by LLM (No priority ranking requested)
+                </p>
+              </div>
+            )}
             <TreeGraphic
               type="heap"
               large
               active={used}
-              events={evidence.slice(0, 7)}
+              events={evidence.slice(0, 15)}
               dsaMetrics={metrics}
             />
           </div>

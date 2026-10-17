@@ -28,32 +28,59 @@ export async function determineSearchParameters(
       body: JSON.stringify({
         model: OLLAMA_MODEL,
         prompt: `You are a log investigation routing agent.
-Your job is to parse a user query and output a strict JSON routing configuration for our C++ data structures.
+Your job is to parse a user query and determine which C++ data structures should run to retrieve evidence.
 
-RULES FOR DATA STRUCTURES:
-1. B+ Tree ('bplus'):
-   - ALWAYS set "used": true.
-   - If the user explicitly asks for a strict time window (e.g., "between 14:00 and 15:00"), extract those into "ranges" with "start_time" and "end_time" in "HH:MM:SS" format.
-   - If they ask for generic times or no time is specified, use a default range of "00:00:00" to "23:59:59".
+SELECTIVE ROUTING RULES (CRITICAL: SKIP UNNEEDED DATA STRUCTURES):
 
-2. Trie ('trie'):
-   - ALWAYS set "used": true.
-   - Extract specific concepts, keywords, or services into the "keywords" array as lowercase strings.
-   - If no specific keywords are requested, use a default keyword "error".
+1. B+ Tree ('bplus') - Temporal Index:
+   - ONLY set "used": true if the query explicitly specifies a bounded time window, time range, or specific hour (e.g., "between 14:15 and 14:30", "at 2:30 PM", "around 14:18", "after 16:00", "between 2:30 PM and 2:35 PM").
+   - If the query does NOT specify a time, or refers to the entire day / whole log / all time (e.g. "Find database errors", "Why did DB-01 crash?", "Why are Stripe webhooks failing?"), set "used": false and "ranges": [].
+   - STRICT PROHIBITION: NEVER fabricate full-day "00:00:00" to "23:59:59" defaults when no time is mentioned. Skip B+ Tree instead.
+   - TIME NORMALIZATION (Convert ALL times to 24-hour "HH:MM:SS" format):
+     * 12-hour AM/PM: "2:30 PM" -> "14:30:00", "2:35 PM" -> "14:35:00", "9:15 AM" -> "09:15:00", "12:00 PM" -> "12:00:00", "12:30 AM" -> "00:30:00".
+     * 24-hour: "14:15" -> "14:15:00", "14:30" -> "14:30:00".
+     * Point in time: "at 14:18" or "around 2:18 PM" -> 5-min window: {"start_time": "14:15:00", "end_time": "14:20:00"}.
+     * Open bounds: "after 14:00" -> {"start_time": "14:00:00", "end_time": "23:59:59"}. "before 11:30" -> {"start_time": "00:00:00", "end_time": "11:30:00"}.
 
-3. Priority Heap ('heap'):
-   - ALMOST ALWAYS set "used": true to rank the resulting logs.
-   - You must select relevant error tags from this list: [timeout, auth, database, connection, panic, crash, deadlock, latency, 500, 404].
-   - Assign a priority score to each chosen tag based on how relevant it is to the user's query.
-   - Set "top_k" to 10 by default.
+2. Trie ('trie') - Keyword & Pattern Index:
+   - ONLY set "used": true if the query specifies identifiable keywords, services, error codes, or domain terms (e.g., "stripe", "database", "deadlock", "timeout", "checkout", "auth", "500").
+   - Extract lowercase strings into "keywords". Also include the service domain if relevant (e.g. for "stripe webhook", include "stripe" and "payment").
+   - If the query contains NO specific keywords (e.g. "What happened between 14:15 and 14:30?", "Summarize events from 2 PM to 3 PM"), set "used": false and "keywords": [].
+   - STRICT PROHIBITION: NEVER default to generic keywords like "error" or "log" when no keywords are requested. Skip Trie instead.
+
+3. Priority Max-Heap ('heap') - Deterministic Ranking Engine:
+   - Set "used": true for incident investigations, root cause discovery, critical failures, or ranking (default: true).
+   - Set "used": false ONLY if the user explicitly asks for unranked raw logs (e.g. "List all logs between 14:00 and 14:10 without ranking").
+   - DYNAMIC TAG WEIGHTS: Assign high priority scores to the primary subjects/entities of the query so they outrank unrelated events:
+     * Primary subject/service: 2000 - 3000 (e.g. "stripe": 3000, "payment": 2000, "database": 3000, "auth": 3000, "deadlock": 2500)
+     * Secondary symptoms: 500 - 1000 (e.g. "timeout": 500, "500": 500, "connection": 500)
+     * Default "top_k": 10 (or 6 for focused queries).
 
 User query: "${prompt}"
 
-Output MUST be valid JSON exactly matching this structure.
-Always output bplus used=true and trie used=true. Provide default range and keywords if none exist in the query.
+Output MUST be valid JSON matching this exact structure:
 
-Example structure (DO NOT copy these values unless relevant, only use the structure):
-{"bplus":{"used":true,"ranges":[{"start_time":"14:00:00","end_time":"15:00:00"}]},"trie":{"used":true,"keywords":["database"]},"heap":{"used":true,"top_k":10,"tags":{"database":1000,"timeout":500}}}`,
+FEW-SHOT EXAMPLES:
+
+Example 1 (Time + Subject):
+Query: "Why did the database fail between 2:30 PM and 2:35 PM?"
+{"bplus":{"used":true,"ranges":[{"start_time":"14:30:00","end_time":"14:35:00"}]},"trie":{"used":true,"keywords":["database"]},"heap":{"used":true,"top_k":10,"tags":{"database":3000,"deadlock":2000,"timeout":500}}}
+
+Example 2 (Keyword only, no time):
+Query: "Why are Stripe webhook requests failing with timeouts?"
+{"bplus":{"used":false,"ranges":[]},"trie":{"used":true,"keywords":["stripe","payment","timeout"]},"heap":{"used":true,"top_k":10,"tags":{"stripe":3000,"payment":2000,"timeout":500}}}
+
+Example 3 (Time only, no keywords):
+Query: "What happened in the system between 14:15 and 14:30?"
+{"bplus":{"used":true,"ranges":[{"start_time":"14:15:00","end_time":"14:30:00"}]},"trie":{"used":false,"keywords":[]},"heap":{"used":true,"top_k":10,"tags":{}}}
+
+Example 4 (Specific error code across all logs):
+Query: "Find all 500 internal server errors on API-01"
+{"bplus":{"used":false,"ranges":[]},"trie":{"used":true,"keywords":["500","api-01"]},"heap":{"used":true,"top_k":10,"tags":{"500":2500,"api-01":2000}}}
+
+Example 5 (Raw unranked request):
+Query: "Show all logs between 11:20:00 and 11:30:00 without ranking"
+{"bplus":{"used":true,"ranges":[{"start_time":"11:20:00","end_time":"11:30:00"}]},"trie":{"used":false,"keywords":[]},"heap":{"used":false,"top_k":0,"tags":{}}}`,
         format: "json",
         stream: false,
       }),
@@ -138,6 +165,16 @@ VERIFIED LOG EVIDENCE (from C++ DSA engine — these are the ONLY facts you may 
 ${evidenceJson}
 
 ═══════════════════════════════════════════════════
+PROMPT-ALIGNMENT & RELEVANCE FILTER (MANDATORY):
+═══════════════════════════════════════════════════
+
+1. DIRECT ANSWER MANDATE: Your explanation MUST directly answer the specific question asked in USER QUERY: "${prompt}".
+
+2. IRRELEVANT LOG EXCLUSION: Carefully read ALL logs in the evidence JSON. If the evidence contains unrelated logs from other systems, services, or different times of day (for example, a database or disk storage error when the user specifically asked about Stripe payment webhooks, or an authentication error when the user asked about checkout), you MUST IGNORE AND EXCLUDE those unrelated logs.
+
+3. ESSENTIAL LOG SELECTION: From the provided evidence, isolate and reference ONLY the essential logs that directly pertain to the user's specific query. Base your technical root cause, non-technical summary, and key findings strictly on those relevant essential logs. Explain the exact failure of the system the user asked about.
+
+═══════════════════════════════════════════════════
 STRICT ANTI-HALLUCINATION RULES (MANDATORY):
 ═══════════════════════════════════════════════════
 
@@ -153,7 +190,7 @@ STRICT ANTI-HALLUCINATION RULES (MANDATORY):
 OUTPUT REQUIREMENTS:
 ═══════════════════════════════════════════════════
 
-If the evidence array is empty "[]", respond with:
+If the evidence array is empty "[]" or contains no logs matching the user's topic, respond with:
 {"summary":"No logs matched your search criteria.","root_cause":"N/A","possible_fix":"N/A","key_findings":[],"non_technical_summary":"No relevant events were found matching your query.","technical_root_cause":"N/A","immediate_mitigation":"N/A","permanent_fix":"N/A"}
 
 Otherwise produce VALID JSON matching this EXACT structure:
@@ -166,7 +203,7 @@ Otherwise produce VALID JSON matching this EXACT structure:
   "possible_fix": "Combined remediation summary (backward-compatible field).",
   "immediate_mitigation": "Direct, actionable operational commands or steps to stop this incident RIGHT NOW. Be specific: mention exact processes to restart, configurations to change, or queries to run.",
   "permanent_fix": "Structural architectural and code-level changes to prevent this class of incident from recurring. Reference specific technologies, patterns, or configurations.",
-  "key_findings": ["Chronologically ordered bullet points, each citing [timestamp server] from the evidence."]
+  "key_findings": ["Chronologically ordered bullet points, each citing [timestamp server] from the relevant evidence."]
 }
 
 Output MUST be strictly valid JSON. No markdown blocks, no extra text.`,
