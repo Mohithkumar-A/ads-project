@@ -19,8 +19,13 @@ const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.1";
 // ─────────────────────────────────────────────────────────────
 
 export async function determineSearchParameters(
-  prompt: string
+  prompt: string,
+  availableSeverityTags: string[] = []
 ): Promise<AgentToolCall> {
+  const candidateTagsStr = availableSeverityTags.length > 0
+    ? availableSeverityTags.join(", ")
+    : "CRITICAL, ERROR, WARNING, INFO, FATAL, SEVERE, ALERT";
+
   try {
     const response = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
       method: "POST",
@@ -30,31 +35,35 @@ export async function determineSearchParameters(
         prompt: `You are a log investigation routing agent.
 Your job is to parse a user query and determine which C++ data structures should run to retrieve evidence.
 
-SELECTIVE ROUTING RULES (CRITICAL: SKIP UNNEEDED DATA STRUCTURES):
+SELECTIVE ROUTING RULES:
 
 1. B+ Tree ('bplus') - Temporal Index:
-   - ONLY set "used": true if the query explicitly specifies a bounded time window, time range, or specific hour (e.g., "between 14:15 and 14:30", "at 2:30 PM", "around 14:18", "after 16:00", "between 2:30 PM and 2:35 PM").
-   - If the query does NOT specify a time, or refers to the entire day / whole log / all time (e.g. "Find database errors", "Why did DB-01 crash?", "Why are Stripe webhooks failing?"), set "used": false and "ranges": [].
+   - ONLY set "used": true if the query explicitly specifies a bounded time window, time range, multiple ranges, or specific hour (e.g., "between 14:15 and 14:30", "at 2:30 PM", "around 14:18", "after 16:00", "between 2:30 PM and 2:35 PM").
+   - Supports multiple ranges if query mentions multiple time intervals (e.g. "between 6:20 AM and 6:35 AM and between 9:10 PM and 9:25 PM").
+   - If the query does NOT specify a time, or refers to the entire day / whole log / all time (e.g. "Find database errors", "Why did DB-01 crash?"), set "used": false and "ranges": [].
    - STRICT PROHIBITION: NEVER fabricate full-day "00:00:00" to "23:59:59" defaults when no time is mentioned. Skip B+ Tree instead.
    - TIME NORMALIZATION (Convert ALL times to 24-hour "HH:MM:SS" format):
      * 12-hour AM/PM: "2:30 PM" -> "14:30:00", "2:35 PM" -> "14:35:00", "9:15 AM" -> "09:15:00", "12:00 PM" -> "12:00:00", "12:30 AM" -> "00:30:00".
      * 24-hour: "14:15" -> "14:15:00", "14:30" -> "14:30:00".
-     * Point in time: "at 14:18" or "around 2:18 PM" -> 5-min window: {"start_time": "14:15:00", "end_time": "14:20:00"}.
+     * Point in time: "at 14:18" or "around 2:18 PM" -> 5-min window: {"start_time": "14:15:30", "end_time": "14:20:30"}.
      * Open bounds: "after 14:00" -> {"start_time": "14:00:00", "end_time": "23:59:59"}. "before 11:30" -> {"start_time": "00:00:00", "end_time": "11:30:00"}.
 
 2. Trie ('trie') - Keyword & Pattern Index:
-   - ONLY set "used": true if the query specifies identifiable keywords, services, error codes, or domain terms (e.g., "stripe", "database", "deadlock", "timeout", "checkout", "auth", "500").
-   - Extract lowercase strings into "keywords". Also include the service domain if relevant (e.g. for "stripe webhook", include "stripe" and "payment").
-   - If the query contains NO specific keywords (e.g. "What happened between 14:15 and 14:30?", "Summarize events from 2 PM to 3 PM"), set "used": false and "keywords": [].
+   - ONLY set "used": true if the query specifies identifiable keywords, services, error codes, or domain terms (e.g., "database", "timeout", "deadlock", "auth", "500", "payment").
+   - Extract lowercase strings into "keywords".
+   - If the query contains NO specific keywords (e.g. "What happened between 14:15 and 14:30?"), set "used": false and "keywords": [].
    - STRICT PROHIBITION: NEVER default to generic keywords like "error" or "log" when no keywords are requested. Skip Trie instead.
 
 3. Priority Max-Heap ('heap') - Deterministic Ranking Engine:
    - Set "used": true for incident investigations, root cause discovery, critical failures, or ranking (default: true).
    - Set "used": false ONLY if the user explicitly asks for unranked raw logs (e.g. "List all logs between 14:00 and 14:10 without ranking").
-   - DYNAMIC TAG WEIGHTS: Assign high priority scores to the primary subjects/entities of the query so they outrank unrelated events:
-     * Primary subject/service: 2000 - 3000 (e.g. "stripe": 3000, "payment": 2000, "database": 3000, "auth": 3000, "deadlock": 2500)
-     * Secondary symptoms: 500 - 1000 (e.g. "timeout": 500, "500": 500, "connection": 500)
-     * Default "top_k": 10 (or 6 for focused queries).
+   - DYNAMIC SEVERITY TAG WEIGHTS:
+     Available severity tags in dataset: [${candidateTagsStr}]
+     Assign integer priority scores (e.g. 100 to 1000) for these severity tags in "heap.tags" based on the query intent.
+     * Severe failure / crash / outage query: score CRITICAL: 1000, FATAL: 1000, ERROR: 500, WARNING: 100, INFO: 10
+     * Warning / retry / degradation query: score WARNING: 1000, ERROR: 500, CRITICAL: 300, INFO: 10
+     * NOTE: "heap.tags" are strictly severity tags (e.g. CRITICAL, ERROR, WARNING, INFO, FATAL). Content/domain search terms (like database, timeout, 500) belong strictly in "trie.keywords".
+     * Default "top_k": 10.
 
 User query: "${prompt}"
 
@@ -62,21 +71,21 @@ Output MUST be valid JSON matching this exact structure:
 
 FEW-SHOT EXAMPLES:
 
-Example 1 (Time + Subject):
+Example 1 (Time + Domain query):
 Query: "Why did the database fail between 2:30 PM and 2:35 PM?"
-{"bplus":{"used":true,"ranges":[{"start_time":"14:30:00","end_time":"14:35:00"}]},"trie":{"used":true,"keywords":["database"]},"heap":{"used":true,"top_k":10,"tags":{"database":3000,"deadlock":2000,"timeout":500}}}
+{"bplus":{"used":true,"ranges":[{"start_time":"14:30:00","end_time":"14:35:00"}]},"trie":{"used":true,"keywords":["database"]},"heap":{"used":true,"top_k":10,"tags":{"CRITICAL":1000,"ERROR":500,"WARNING":100}}}
 
-Example 2 (Keyword only, no time):
-Query: "Why are Stripe webhook requests failing with timeouts?"
-{"bplus":{"used":false,"ranges":[]},"trie":{"used":true,"keywords":["stripe","payment","timeout"]},"heap":{"used":true,"top_k":10,"tags":{"stripe":3000,"payment":2000,"timeout":500}}}
+Example 2 (Multiple time ranges):
+Query: "Compare errors between 06:20:00 and 06:35:00 and between 21:10:00 and 21:25:00"
+{"bplus":{"used":true,"ranges":[{"start_time":"06:20:00","end_time":"06:35:00"},{"start_time":"21:10:00","end_time":"21:25:00"}]},"trie":{"used":false,"keywords":[]},"heap":{"used":true,"top_k":10,"tags":{"CRITICAL":1000,"ERROR":500,"WARNING":100}}}
 
-Example 3 (Time only, no keywords):
-Query: "What happened in the system between 14:15 and 14:30?"
-{"bplus":{"used":true,"ranges":[{"start_time":"14:15:00","end_time":"14:30:00"}]},"trie":{"used":false,"keywords":[]},"heap":{"used":true,"top_k":10,"tags":{}}}
+Example 3 (Keyword only, no time):
+Query: "Why are webhook requests failing with timeouts?"
+{"bplus":{"used":false,"ranges":[]},"trie":{"used":true,"keywords":["webhook","timeout"]},"heap":{"used":true,"top_k":10,"tags":{"CRITICAL":1000,"ERROR":500,"WARNING":100}}}
 
-Example 4 (Specific error code across all logs):
-Query: "Find all 500 internal server errors on API-01"
-{"bplus":{"used":false,"ranges":[]},"trie":{"used":true,"keywords":["500","api-01"]},"heap":{"used":true,"top_k":10,"tags":{"500":2500,"api-01":2000}}}
+Example 4 (Point in time):
+Query: "What happened at 14:18?"
+{"bplus":{"used":true,"ranges":[{"start_time":"14:15:30","end_time":"14:20:30"}]},"trie":{"used":false,"keywords":[]},"heap":{"used":true,"top_k":10,"tags":{"CRITICAL":1000,"ERROR":500,"WARNING":100,"INFO":50}}}
 
 Example 5 (Raw unranked request):
 Query: "Show all logs between 11:20:00 and 11:30:00 without ranking"

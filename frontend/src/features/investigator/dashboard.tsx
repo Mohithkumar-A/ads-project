@@ -60,15 +60,43 @@ export function Dashboard() {
   const upload = useRef<HTMLInputElement>(null);
   const logs = parseLogs(text);
 
-  const stats = sample
-    ? ["100,000", "5", "12", "2,341", "184"]
-    : [
-        String(logs.length),
-        String(new Set(logs.map((l) => l.server)).size),
-        String(new Set(logs.map((l) => l.service)).size),
-        String(logs.filter((l) => l.severity === "ERROR").length),
-        String(logs.filter((l) => l.severity === "CRITICAL").length),
-      ];
+  const stats = [
+    logs.length.toLocaleString(),
+    String(new Set(logs.map((l) => l.server)).size),
+    String(new Set(logs.map((l) => l.service)).size),
+    logs.filter((l) => l.severity.toUpperCase().includes("ERR")).length.toLocaleString(),
+    logs
+      .filter(
+        (l) =>
+          l.severity.toUpperCase().includes("CRIT") ||
+          l.severity.toUpperCase().includes("FATAL")
+      )
+      .length.toLocaleString(),
+  ];
+
+  const trieIndexedTermsCount = new Set(
+    logs.flatMap((l) =>
+      `${l.message} ${l.server} ${l.service} ${l.severity}`
+        .toLowerCase()
+        .split(/[\s,.:;!?"'()[\]{}]+/)
+        .filter((w) => w.length > 1)
+    )
+  ).size;
+
+  const bplusMetric = result?.dsa_metrics.find((m) => m.name === "B+ Tree");
+  const bplusHeight =
+    bplusMetric?.traversal_path?.type === "bplus" &&
+    bplusMetric.traversal_path.nodes.length > 0
+      ? String(
+          Math.max(
+            ...bplusMetric.traversal_path.nodes.map((n) =>
+              n.type === "root" ? 1 : n.type === "internal" ? 2 : 3
+            )
+          )
+        )
+      : result?.tool_call.bplus.used
+        ? "3"
+        : "—";
 
   async function investigate(q: string) {
     if (!q.trim() || processing) return;
@@ -439,7 +467,7 @@ export function Dashboard() {
                   ? `${result.dsa_metrics.find((m) => m.name === "B+ Tree")?.time_ms.toFixed(3)} ms`
                   : "—",
               ],
-              ["Tree height", result ? "4" : "—"],
+              ["Tree height", result ? bplusHeight : "—"],
             ]}
             active={Boolean(result && result.tool_call.bplus.used)}
             processing={processing}
@@ -478,7 +506,7 @@ export function Dashboard() {
                   ? `${result.dsa_metrics.find((m) => m.name === "Trie")?.time_ms.toFixed(3)} ms`
                   : "—",
               ],
-              ["Indexed terms", result ? "8,492" : "—"],
+              ["Indexed terms", result ? trieIndexedTermsCount.toLocaleString() : "—"],
             ]}
             active={Boolean(result && result.tool_call.trie.used)}
             processing={processing}
@@ -505,11 +533,7 @@ export function Dashboard() {
               [
                 "Highest severity",
                 result?.evidence.length ? (
-                  <SeverityBadge
-                    severity={
-                      result.evidence.some((l) => l.severity === "CRITICAL") ? "CRITICAL" : "ERROR"
-                    }
-                  />
+                  <SeverityBadge severity={result.evidence[0].severity} />
                 ) : (
                   "—"
                 ),

@@ -2,8 +2,8 @@
 // Shared type definitions for the backend orchestrator
 // ─────────────────────────────────────────────────────────────
 
-/** Severity levels matching the log format */
-export type Severity = "INFO" | "WARNING" | "ERROR" | "CRITICAL";
+/** Dynamic log severity tag (extracted via string slicing, no hardcoded enums) */
+export type Severity = string;
 
 /** A single parsed log record (mirrors the frontend LogRecord) */
 export interface LogRecord {

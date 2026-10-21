@@ -151,7 +151,7 @@ std::vector<LogRecord*> MaxHeap::getTopK(int k) {
     traversalPath.initial_nodes.clear();
     traversalPath.total_heap_size = static_cast<int>(heap.size());
 
-    int nodeLimit = std::min(static_cast<int>(heap.size()), 15);
+    int nodeLimit = static_cast<int>(heap.size());
     for (int i = 0; i < nodeLimit; i++) {
         HeapNodeInfo info;
         info.index = i;

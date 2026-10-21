@@ -102,14 +102,51 @@ function validateRequest(
 // Body: { logText, start_time, end_time }
 // ─────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────
+// POST /api/bplustree
+// Body: { logText, ranges?: [{start_time, end_time}], start_time?: string, end_time?: string, time?: string }
+// ─────────────────────────────────────────────────────────────
+
 router.post("/bplustree", async (req: Request, res: Response): Promise<void> => {
-  const { logText, start_time, end_time } = req.body ?? {};
+  const { logText, ranges, start_time, end_time, time } = req.body ?? {};
   if (!validateRequest(logText, res)) return;
 
-  if (!start_time || !end_time) {
+  const resolvedRanges: Array<{ start_time: string; end_time: string }> = [];
+
+  if (Array.isArray(ranges) && ranges.length > 0) {
+    for (const r of ranges) {
+      if (r?.start_time && r?.end_time) {
+        resolvedRanges.push({ start_time: String(r.start_time), end_time: String(r.end_time) });
+      }
+    }
+  } else if (start_time && end_time) {
+    resolvedRanges.push({ start_time: String(start_time), end_time: String(end_time) });
+  } else if (time && typeof time === "string") {
+    // Single point in time: normalize to +/- 2.5 min window
+    const cleanTime = time.trim();
+    const parts = cleanTime.split(":").map(Number);
+    if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+      const h = parts[0];
+      const m = parts[1];
+      const s = parts[2] || 0;
+      const totalSeconds = h * 3600 + m * 60 + s;
+      const startSec = Math.max(0, totalSeconds - 150);
+      const endSec = Math.min(86399, totalSeconds + 150);
+
+      const fmt = (sec: number) => {
+        const hh = String(Math.floor(sec / 3600)).padStart(2, "0");
+        const mm = String(Math.floor((sec % 3600) / 60)).padStart(2, "0");
+        const ss = String(sec % 60).padStart(2, "0");
+        return `${hh}:${mm}:${ss}`;
+      };
+      resolvedRanges.push({ start_time: fmt(startSec), end_time: fmt(endSec) });
+    }
+  }
+
+  if (resolvedRanges.length === 0) {
     res.status(400).json({
       error: "Missing parameters",
-      details: "Provide 'start_time' and 'end_time' for B+ Tree range query.",
+      details: "Provide 'ranges', 'start_time' and 'end_time', or a specific 'time' for B+ Tree query.",
     } satisfies ErrorResponse);
     return;
   }
@@ -117,10 +154,13 @@ router.post("/bplustree", async (req: Request, res: Response): Promise<void> => 
   let tempFilePath: string | undefined;
   try {
     tempFilePath = await saveTempFile(logText.trim());
+    const rangeString = resolvedRanges
+      .map((r) => `${r.start_time}-${r.end_time}`)
+      .join(",");
+
     const result = await spawnEngineRaw([
       "--file", tempFilePath,
-      "--bplus-start", start_time,
-      "--bplus-end", end_time,
+      "--bplus-ranges", rangeString,
     ]);
     res.json(result);
   } catch (err) {
@@ -134,17 +174,24 @@ router.post("/bplustree", async (req: Request, res: Response): Promise<void> => 
 
 // ─────────────────────────────────────────────────────────────
 // POST /api/trie
-// Body: { logText, keyword }
+// Body: { logText, keyword?: string, keywords?: string[] }
 // ─────────────────────────────────────────────────────────────
 
 router.post("/trie", async (req: Request, res: Response): Promise<void> => {
-  const { logText, keyword } = req.body ?? {};
+  const { logText, keyword, keywords } = req.body ?? {};
   if (!validateRequest(logText, res)) return;
 
-  if (!keyword || typeof keyword !== "string" || keyword.trim().length === 0) {
+  const keys: string[] = [];
+  if (Array.isArray(keywords)) {
+    keys.push(...keywords.map(String).filter((k) => k.trim().length > 0));
+  } else if (typeof keyword === "string" && keyword.trim().length > 0) {
+    keys.push(keyword.trim());
+  }
+
+  if (keys.length === 0) {
     res.status(400).json({
       error: "Missing parameters",
-      details: "Provide a 'keyword' string for Trie search.",
+      details: "Provide a 'keyword' string or 'keywords' array for Trie search.",
     } satisfies ErrorResponse);
     return;
   }
@@ -154,7 +201,7 @@ router.post("/trie", async (req: Request, res: Response): Promise<void> => {
     tempFilePath = await saveTempFile(logText.trim());
     const result = await spawnEngineRaw([
       "--file", tempFilePath,
-      "--trie-keys", keyword.trim(),
+      "--trie-keys", keys.join(","),
     ]);
     res.json(result);
   } catch (err) {
@@ -168,11 +215,11 @@ router.post("/trie", async (req: Request, res: Response): Promise<void> => {
 
 // ─────────────────────────────────────────────────────────────
 // POST /api/heap
-// Body: { logText, k }
+// Body: { logText, k?: number, tags?: Record<string, number> }
 // ─────────────────────────────────────────────────────────────
 
 router.post("/heap", async (req: Request, res: Response): Promise<void> => {
-  const { logText, k } = req.body ?? {};
+  const { logText, k, tags } = req.body ?? {};
   if (!validateRequest(logText, res)) return;
 
   const topK = parseInt(String(k || "10"), 10);
@@ -187,10 +234,16 @@ router.post("/heap", async (req: Request, res: Response): Promise<void> => {
   let tempFilePath: string | undefined;
   try {
     tempFilePath = await saveTempFile(logText.trim());
-    const result = await spawnEngineRaw([
-      "--file", tempFilePath,
-      "--heap-topk", String(topK),
-    ]);
+    const args = ["--file", tempFilePath, "--heap-topk", String(topK)];
+
+    if (tags && typeof tags === "object" && Object.keys(tags).length > 0) {
+      const tagString = Object.entries(tags)
+        .map(([t, s]) => `${t}:${s}`)
+        .join(",");
+      args.push("--heap-tags", tagString);
+    }
+
+    const result = await spawnEngineRaw(args);
     res.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

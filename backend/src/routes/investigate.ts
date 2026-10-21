@@ -18,6 +18,7 @@ import {
   cleanupTempFile,
   cleanupUpload,
 } from "../utils/fileManager";
+import { extractCandidateTags } from "../utils/tagExtractor";
 import { determineSearchParameters, generateSummary, type SynthesisResult } from "../services/llm";
 import { executeDSA } from "../services/engine";
 import type { InvestigationResponse, ErrorResponse } from "../types";
@@ -104,8 +105,10 @@ router.post(
       console.log(`[Investigate] Saved temp file: ${tempFilePath}`);
 
       // ── 4. LLM Phase 1 — Determine search parameters ──────
-      console.log(`[Investigate] Phase 1: Routing prompt to LLM...`);
-      const toolCall = await determineSearchParameters(prompt);
+      console.log(`[Investigate] Phase 1: Extracting tags and routing prompt to LLM...`);
+      const candidateTags = extractCandidateTags(trimmed);
+      console.log(`[Investigate] Extracted candidate severity tags:`, candidateTags);
+      const toolCall = await determineSearchParameters(prompt, candidateTags);
       console.log(`[Investigate] Tool call:`, JSON.stringify(toolCall));
 
       // ── 5. Execute C++ DSA engine ──────────────────────────

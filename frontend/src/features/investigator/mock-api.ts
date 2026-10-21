@@ -1,4 +1,4 @@
-export type Severity = "INFO" | "WARNING" | "ERROR" | "CRITICAL";
+export type Severity = string;
 export type LogRecord = {
   id: number;
   timestamp: string;
@@ -10,8 +10,9 @@ export type LogRecord = {
   recency: number;
   priorityScore?: number;
 };
-export const severityWeights: Record<Severity, number> = {
+export const severityWeights: Record<string, number> = {
   CRITICAL: 10,
+  FATAL: 10,
   ERROR: 7,
   WARNING: 4,
   INFO: 1,
@@ -34,7 +35,7 @@ export const sampleLogs: LogRecord[] = [
   timestamp: `2026-10-08 ${row[0]}`,
   server: String(row[1]),
   service: String(row[2]),
-  severity: row[3] as Severity,
+  severity: String(row[3]),
   message: String(row[4]),
   frequency: Number(row[5]),
   recency: Number(row[6]),
@@ -44,17 +45,30 @@ export const logText = (logs: LogRecord[]) =>
 export const initialLogText = logText(sampleLogs.slice(1, 8));
 export function parseLogs(text: string): LogRecord[] {
   return text.split("\n").flatMap((line, i) => {
-    const m = line.match(
-      /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+\[(INFO|WARNING|ERROR|CRITICAL)\]\s+(\S+)\s+(.+)$/,
-    );
-    if (!m) return [];
-    const [, timestamp, severityStr, server, message] = m as unknown as [
-      string,
-      string,
-      Severity,
-      string,
-      string,
-    ];
+    const trimmed = line.trim();
+    if (!trimmed) return [];
+
+    // String slicing: locate opening and closing delimiters '[' and ']' near timestamp
+    const bracketOpen = trimmed.indexOf("[");
+    const bracketClose = bracketOpen !== -1 ? trimmed.indexOf("]", bracketOpen) : -1;
+    if (bracketOpen === -1 || bracketClose === -1) return [];
+
+    const timestamp = trimmed.substring(0, bracketOpen).trim();
+    const severityStr = trimmed.substring(bracketOpen + 1, bracketClose).trim();
+    const afterBracket = trimmed.substring(bracketClose + 1).trim();
+    if (!afterBracket) return [];
+
+    const spaceIndex = afterBracket.search(/\s/);
+    const server = spaceIndex !== -1 ? afterBracket.substring(0, spaceIndex).trim() : afterBracket;
+    const message = spaceIndex !== -1 ? afterBracket.substring(spaceIndex + 1).trim() : "";
+
+    // Dynamic service derivation from server token prefix
+    const delimIndex = server.search(/[-_]/);
+    const rawPrefix = delimIndex !== -1 ? server.substring(0, delimIndex) : server;
+    const service = rawPrefix.toUpperCase() === "DB"
+      ? "Database"
+      : rawPrefix.charAt(0).toUpperCase() + rawPrefix.slice(1).toLowerCase();
+
     return [
       {
         id: i + 1,
@@ -62,15 +76,9 @@ export function parseLogs(text: string): LogRecord[] {
         severity: severityStr,
         server,
         message,
-        service: server.startsWith("DB")
-          ? "Database"
-          : server.startsWith("AUTH")
-            ? "Auth"
-            : server.startsWith("API")
-              ? "API"
-              : "Web",
+        service,
         frequency: Math.min(i + 1, 8),
-        recency: Math.min(i + 1, 7),
+        recency: i + 1,
       },
     ];
   });

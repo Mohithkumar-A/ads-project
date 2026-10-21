@@ -164,7 +164,21 @@ export function Metric({
   );
 }
 export function SeverityBadge({ severity }: { severity: string }) {
-  return <span className={`severity severity-${severity.toLowerCase()}`}>{severity}</span>;
+  const sevLower = (severity || "").toLowerCase();
+  let colorClass = "severity-info";
+  if (
+    sevLower.includes("crit") ||
+    sevLower.includes("fatal") ||
+    sevLower.includes("emerg") ||
+    sevLower.includes("alert")
+  ) {
+    colorClass = "severity-critical";
+  } else if (sevLower.includes("err") || sevLower.includes("sever")) {
+    colorClass = "severity-error";
+  } else if (sevLower.includes("warn")) {
+    colorClass = "severity-warning";
+  }
+  return <span className={`severity ${colorClass}`}>{severity}</span>;
 }
 export function LogTable({ logs, priority = false }: { logs: LogRecord[]; priority?: boolean }) {
   return (
@@ -628,13 +642,13 @@ export function TreeGraphic({
       </div>
     ) : null;
 
-  // 1. Collect nodes to display
+  // 1. Collect nodes to display (uncapped)
   const heapNodes: import("./mock-api").HeapNodeInfo[] = [];
 
   if (tp && tp.type === "heap" && tp.initial_nodes && tp.initial_nodes.length > 0) {
     heapNodes.push(...tp.initial_nodes);
   } else if (events && events.length > 0) {
-    events.slice(0, 15).forEach((ev, idx) => {
+    events.forEach((ev, idx) => {
       heapNodes.push({
         index: idx,
         severity: ev.severity,
@@ -645,7 +659,7 @@ export function TreeGraphic({
     });
   }
 
-  const nodeCount = Math.min(heapNodes.length, 15);
+  const nodeCount = heapNodes.length;
   if (nodeCount === 0) {
     return renderSvg(
       <text x="360" y="120" textAnchor="middle" fill="var(--muted-foreground)" fontSize="13">
@@ -655,40 +669,25 @@ export function TreeGraphic({
     );
   }
 
-  // 2. Compute Tree Coordinates (Complete Binary Tree up to 4 levels)
+  // 2. Compute Tree Coordinates for Arbitrary Depth Binary Tree
+  const maxLevel = Math.floor(Math.log2(nodeCount));
+  const slotsAtBottom = Math.pow(2, maxLevel);
+  const svgWidth = Math.max(800, slotsAtBottom * 85);
+  const svgHeight = 90 + (maxLevel + 1) * 95;
+
   const positions: [number, number, number, number][] = []; // [centerX, centerY, width, height]
 
   for (let i = 0; i < nodeCount; i++) {
     const level = Math.floor(Math.log2(i + 1));
     const posInLevel = i - (Math.pow(2, level) - 1);
+    const slotsInLevel = Math.pow(2, level);
+    const slotWidth = svgWidth / slotsInLevel;
 
-    let cx = 360;
-    let cy = 75;
-    let w = 114;
-    let h = 50;
+    const cx = (posInLevel + 0.5) * slotWidth;
+    const cy = 75 + level * 95;
+    const w = Math.max(54, Math.min(114, slotWidth - 10));
+    const h = Math.max(36, Math.min(50, 52 - level * 2));
 
-    if (level === 0) {
-      cx = 360;
-      cy = 75;
-      w = 120;
-      h = 52;
-    } else if (level === 1) {
-      cx = posInLevel === 0 ? 210 : 510;
-      cy = 165;
-      w = 110;
-      h = 50;
-    } else if (level === 2) {
-      const xCoords = [125, 295, 425, 595];
-      cx = xCoords[posInLevel] ?? (125 + posInLevel * 160);
-      cy = 255;
-      w = 100;
-      h = 46;
-    } else if (level === 3) {
-      cx = 50 + posInLevel * 88;
-      cy = 340;
-      w = 80;
-      h = 42;
-    }
     positions.push([cx, cy, w, h]);
   }
 
@@ -725,8 +724,7 @@ export function TreeGraphic({
     });
   }
 
-  const viewBox =
-    nodeCount > 7 ? "-30 0 780 390" : nodeCount > 3 ? "-30 0 780 310" : "-30 0 780 230";
+  const viewBox = `-30 0 ${svgWidth + 60} ${svgHeight + 30}`;
 
   return renderSvg(
     <>
@@ -742,7 +740,7 @@ export function TreeGraphic({
           <rect
             x="20"
             y="12"
-            width="680"
+            width={Math.max(680, svgWidth - 40)}
             height="26"
             rx="5"
             fill="color-mix(in oklab, var(--primary) 12%, var(--card))"
@@ -750,7 +748,7 @@ export function TreeGraphic({
             strokeWidth="1"
           />
           <text
-            x="360"
+            x={svgWidth / 2}
             y="29"
             textAnchor="middle"
             fontSize="11"
