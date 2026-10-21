@@ -414,13 +414,15 @@ h1 {
 }
 .line-numbers {
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 9px;
   line-height: 22px;
   color: var(--muted-foreground);
   padding: 11px 10px;
   border-right: 1px solid var(--border);
   text-align: right;
   user-select: none;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 .log-editor textarea {
   width: 100%;
@@ -434,6 +436,7 @@ h1 {
   line-height: 22px;
   white-space: pre;
   overflow: auto;
+  box-sizing: border-box;
 }
 .dataset-controls {
   display: flex;
@@ -867,6 +870,47 @@ h1 {
   fill: var(--destructive);
   opacity: 0.7;
 }
+/* Prevent text/graph selection while dragging/panning */
+.tree-graphic,
+.tree-graphic *,
+.tree-node,
+.tree-node *,
+.heap-node-group,
+.heap-node-group * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+}
+
+/* ── Modern Binary Max-Heap Priority Tree ────────────────── */
+.heap-node-group {
+  cursor: pointer;
+  outline: none;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+.heap-node-group:hover {
+  filter: brightness(1.15);
+}
+.heap-card-rect {
+  transition: stroke 0.2s ease, fill 0.2s ease, filter 0.2s ease;
+}
+.heap-badge-rect {
+  transition: all 0.2s ease;
+}
+.heap-badge-text {
+  font-family: var(--font-mono);
+  user-select: none;
+}
+.heap-severity-text {
+  font-family: var(--font-mono);
+  user-select: none;
+}
+.heap-meta-text {
+  font-family: var(--font-mono);
+  user-select: none;
+}
+
 /* Binary Max-Heap sift-down path visualization */
 .edge-sift-active {
   stroke: var(--primary) !important;

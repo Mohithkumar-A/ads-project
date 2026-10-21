@@ -33,63 +33,123 @@ export async function determineSearchParameters(
       body: JSON.stringify({
         model: OLLAMA_MODEL,
         prompt: `You are a log investigation routing agent.
-Your job is to parse a user query and determine which C++ data structures should run to retrieve evidence.
+Your ONLY job: parse the user query and decide which C++ data structures to activate.
 
-SELECTIVE ROUTING RULES:
+════════════════════════════════════════════════════
+MANDATORY DECISION PROCESS (follow these steps IN ORDER):
+════════════════════════════════════════════════════
 
-1. B+ Tree ('bplus') - Temporal Index:
-   - ONLY set "used": true if the query explicitly specifies a bounded time window, time range, multiple ranges, or specific hour (e.g., "between 14:15 and 14:30", "at 2:30 PM", "around 14:18", "after 16:00", "between 2:30 PM and 2:35 PM").
-   - Supports multiple ranges if query mentions multiple time intervals (e.g. "between 6:20 AM and 6:35 AM and between 9:10 PM and 9:25 PM").
-   - If the query does NOT specify a time, or refers to the entire day / whole log / all time (e.g. "Find database errors", "Why did DB-01 crash?"), set "used": false and "ranges": [].
-   - STRICT PROHIBITION: NEVER fabricate full-day "00:00:00" to "23:59:59" defaults when no time is mentioned. Skip B+ Tree instead.
-   - TIME NORMALIZATION (Convert ALL times to 24-hour "HH:MM:SS" format):
-     * 12-hour AM/PM: "2:30 PM" -> "14:30:00", "2:35 PM" -> "14:35:00", "9:15 AM" -> "09:15:00", "12:00 PM" -> "12:00:00", "12:30 AM" -> "00:30:00".
-     * 24-hour: "14:15" -> "14:15:00", "14:30" -> "14:30:00".
-     * Point in time: "at 14:18" or "around 2:18 PM" -> 5-min window: {"start_time": "14:15:30", "end_time": "14:20:30"}.
-     * Open bounds: "after 14:00" -> {"start_time": "14:00:00", "end_time": "23:59:59"}. "before 11:30" -> {"start_time": "00:00:00", "end_time": "11:30:00"}.
+STEP 1 — SCAN FOR EXPLICIT TIME REFERENCES:
+Read the query word by word. Does it contain a concrete clock time, time range, or time-bounding phrase?
 
-2. Trie ('trie') - Keyword & Pattern Index:
-   - ONLY set "used": true if the query specifies identifiable keywords, services, error codes, or domain terms (e.g., "database", "timeout", "deadlock", "auth", "500", "payment").
-   - Extract lowercase strings into "keywords".
-   - If the query contains NO specific keywords (e.g. "What happened between 14:15 and 14:30?"), set "used": false and "keywords": [].
-   - STRICT PROHIBITION: NEVER default to generic keywords like "error" or "log" when no keywords are requested. Skip Trie instead.
+Concrete time examples: "14:15", "2:30 PM", "at 09:00", "around 3 AM", "after 16:00", "before noon", "between 06:20 and 06:35", "from 21:10 to 21:25".
 
-3. Priority Max-Heap ('heap') - Deterministic Ranking Engine:
-   - Set "used": true for incident investigations, root cause discovery, critical failures, or ranking (default: true).
-   - Set "used": false ONLY if the user explicitly asks for unranked raw logs (e.g. "List all logs between 14:00 and 14:10 without ranking").
-   - DYNAMIC SEVERITY TAG WEIGHTS:
-     Available severity tags in dataset: [${candidateTagsStr}]
-     Assign integer priority scores (e.g. 100 to 1000) for these severity tags in "heap.tags" based on the query intent.
-     * Severe failure / crash / outage query: score CRITICAL: 1000, FATAL: 1000, ERROR: 500, WARNING: 100, INFO: 10
-     * Warning / retry / degradation query: score WARNING: 1000, ERROR: 500, CRITICAL: 300, INFO: 10
-     * NOTE: "heap.tags" are strictly severity tags (e.g. CRITICAL, ERROR, WARNING, INFO, FATAL). Content/domain search terms (like database, timeout, 500) belong strictly in "trie.keywords".
-     * Default "top_k": 10.
+NOT time references (do NOT treat these as times):
+- General words: "when", "during", "recent", "latest", "last", "today", "yesterday"
+- Durations without anchors: "past hour", "last 5 minutes"
+- No time mentioned at all
+
+DECISION:
+  → If YES (concrete time found): set bplus.used = true, convert to 24h "HH:MM:SS" ranges.
+  → If NO concrete time found: set bplus.used = false, ranges = []. STOP considering B+ Tree.
+
+STEP 2 — SCAN FOR KEYWORDS / DOMAIN TERMS:
+Does the query mention specific services, error types, codes, protocols, or technical terms?
+
+Keyword examples: "database", "timeout", "connection", "deadlock", "auth", "payment", "500", "404", "webhook", "stripe", "nginx", "OOM", "disk", "memory", "CPU", "SSL", "DNS", "socket", "crash", "reboot", "failover".
+
+NOT keywords (too generic — do NOT extract these):
+- "error", "log", "issue", "problem", "event", "failure" used alone as the only term without a specific domain qualifier
+- Exception: If "error" or "failure" appears WITH a specific service/domain term (e.g., "database error", "auth failure"), extract ONLY the specific term ("database", "auth"), not "error"/"failure".
+
+DECISION:
+  → If specific keywords found: set trie.used = true, extract them lowercase into keywords[].
+  → If NO specific keywords: set trie.used = false, keywords = [].
+
+STEP 3 — HEAP (almost always on):
+  → Set heap.used = true UNLESS the user explicitly says "without ranking", "unranked", or "raw logs".
+  → Assign severity tag weights from [${candidateTagsStr}] based on intent:
+    * Crash/outage/critical investigation: CRITICAL:1000, FATAL:1000, ERROR:500, WARNING:100, INFO:10
+    * Warning/degradation/retry focus: WARNING:1000, ERROR:500, CRITICAL:300, INFO:10
+    * General/broad investigation: CRITICAL:1000, ERROR:800, WARNING:400, INFO:50
+  → "heap.tags" contain ONLY severity labels (CRITICAL, ERROR, etc.), NEVER domain terms.
+  → Default top_k: 10.
+
+════════════════════════════════════════════════════
+ABSOLUTE PROHIBITIONS (violating these = WRONG answer):
+════════════════════════════════════════════════════
+
+❌ NEVER set bplus.used = true when no clock time appears in the query.
+❌ NEVER fabricate ranges like "00:00:00"-"23:59:59" or "12:00:00"-"12:00:00" as defaults.
+❌ NEVER put domain keywords (database, timeout, etc.) into heap.tags — those go in trie.keywords.
+❌ NEVER put severity tags (CRITICAL, ERROR, etc.) into trie.keywords — those go in heap.tags.
+❌ NEVER extract generic words "error", "log", "issue", "event" as trie keywords unless paired with a domain term.
+
+════════════════════════════════════════════════════
+TIME NORMALIZATION (only when bplus.used = true):
+════════════════════════════════════════════════════
+
+- 12h→24h: "2:30 PM"→"14:30:00", "9:15 AM"→"09:15:00", "12:00 PM"→"12:00:00", "12:30 AM"→"00:30:00"
+- 24h: "14:15"→"14:15:00"
+- Point-in-time ("at X" / "around X"): create ±2.5 min window → e.g. "at 14:18" → {"start_time":"14:15:30","end_time":"14:20:30"}
+- Open start ("after X"): {"start_time":"X","end_time":"23:59:59"}
+- Open end ("before X"): {"start_time":"00:00:00","end_time":"X"}
+- Multiple ranges supported: list each as separate object in ranges[].
+
+════════════════════════════════════════════════════
+FEW-SHOT EXAMPLES (study these carefully):
+════════════════════════════════════════════════════
+
+Example 1 — Time + keyword:
+Q: "Why did the database fail between 2:30 PM and 2:35 PM?"
+A: {"bplus":{"used":true,"ranges":[{"start_time":"14:30:00","end_time":"14:35:00"}]},"trie":{"used":true,"keywords":["database"]},"heap":{"used":true,"top_k":10,"tags":{"CRITICAL":1000,"ERROR":500,"WARNING":100}}}
+
+Example 2 — Multiple time ranges:
+Q: "Compare errors between 06:20 and 06:35 and between 21:10 and 21:25"
+A: {"bplus":{"used":true,"ranges":[{"start_time":"06:20:00","end_time":"06:35:00"},{"start_time":"21:10:00","end_time":"21:25:00"}]},"trie":{"used":false,"keywords":[]},"heap":{"used":true,"top_k":10,"tags":{"CRITICAL":1000,"ERROR":500,"WARNING":100}}}
+
+Example 3 — Keyword only, NO time (B+ Tree OFF):
+Q: "Find all connection timeout events"
+A: {"bplus":{"used":false,"ranges":[]},"trie":{"used":true,"keywords":["connection","timeout"]},"heap":{"used":true,"top_k":10,"tags":{"CRITICAL":1000,"ERROR":800,"WARNING":400,"INFO":50}}}
+
+Example 4 — Point in time:
+Q: "What happened at 14:18?"
+A: {"bplus":{"used":true,"ranges":[{"start_time":"14:15:30","end_time":"14:20:30"}]},"trie":{"used":false,"keywords":[]},"heap":{"used":true,"top_k":10,"tags":{"CRITICAL":1000,"ERROR":500,"WARNING":100,"INFO":50}}}
+
+Example 5 — Service investigation, NO time (B+ Tree OFF):
+Q: "Why did DB-01 crash?"
+A: {"bplus":{"used":false,"ranges":[]},"trie":{"used":true,"keywords":["db-01","crash"]},"heap":{"used":true,"top_k":10,"tags":{"CRITICAL":1000,"FATAL":1000,"ERROR":500,"WARNING":100}}}
+
+Example 6 — Generic broad question, NO time, NO specific keyword (only Heap):
+Q: "What are the most critical issues?"
+A: {"bplus":{"used":false,"ranges":[]},"trie":{"used":false,"keywords":[]},"heap":{"used":true,"top_k":10,"tags":{"CRITICAL":1000,"FATAL":1000,"ERROR":500,"WARNING":100,"INFO":10}}}
+
+Example 7 — Keyword with "error" context (extract domain, not "error"):
+Q: "Show me all database errors"
+A: {"bplus":{"used":false,"ranges":[]},"trie":{"used":true,"keywords":["database"]},"heap":{"used":true,"top_k":10,"tags":{"CRITICAL":1000,"ERROR":800,"WARNING":200}}}
+
+Example 8 — Open-ended time bound:
+Q: "What failed after 4 PM?"
+A: {"bplus":{"used":true,"ranges":[{"start_time":"16:00:00","end_time":"23:59:59"}]},"trie":{"used":false,"keywords":[]},"heap":{"used":true,"top_k":10,"tags":{"CRITICAL":1000,"ERROR":500,"WARNING":100}}}
+
+Example 9 — Raw unranked request:
+Q: "List all logs between 11:20 and 11:30 without ranking"
+A: {"bplus":{"used":true,"ranges":[{"start_time":"11:20:00","end_time":"11:30:00"}]},"trie":{"used":false,"keywords":[]},"heap":{"used":false,"top_k":0,"tags":{}}}
+
+Example 10 — Multiple keywords, NO time (B+ Tree OFF):
+Q: "Find authentication failures related to OAuth tokens"
+A: {"bplus":{"used":false,"ranges":[]},"trie":{"used":true,"keywords":["authentication","oauth","token"]},"heap":{"used":true,"top_k":10,"tags":{"CRITICAL":1000,"ERROR":800,"WARNING":300}}}
+
+════════════════════════════════════════════════════
+SELF-CHECK (do this before outputting):
+════════════════════════════════════════════════════
+1. Did I set bplus.used=true? → Re-read the query: is there an actual clock time (HH:MM, H:MM AM/PM)? If not, change to false.
+2. Did I set trie.used=true? → Are the keywords specific domain/service terms (not just "error"/"log")? If not, change to false.
+3. Did I put domain terms in heap.tags? → Move them to trie.keywords.
 
 User query: "${prompt}"
 
-Output MUST be valid JSON matching this exact structure:
-
-FEW-SHOT EXAMPLES:
-
-Example 1 (Time + Domain query):
-Query: "Why did the database fail between 2:30 PM and 2:35 PM?"
-{"bplus":{"used":true,"ranges":[{"start_time":"14:30:00","end_time":"14:35:00"}]},"trie":{"used":true,"keywords":["database"]},"heap":{"used":true,"top_k":10,"tags":{"CRITICAL":1000,"ERROR":500,"WARNING":100}}}
-
-Example 2 (Multiple time ranges):
-Query: "Compare errors between 06:20:00 and 06:35:00 and between 21:10:00 and 21:25:00"
-{"bplus":{"used":true,"ranges":[{"start_time":"06:20:00","end_time":"06:35:00"},{"start_time":"21:10:00","end_time":"21:25:00"}]},"trie":{"used":false,"keywords":[]},"heap":{"used":true,"top_k":10,"tags":{"CRITICAL":1000,"ERROR":500,"WARNING":100}}}
-
-Example 3 (Keyword only, no time):
-Query: "Why are webhook requests failing with timeouts?"
-{"bplus":{"used":false,"ranges":[]},"trie":{"used":true,"keywords":["webhook","timeout"]},"heap":{"used":true,"top_k":10,"tags":{"CRITICAL":1000,"ERROR":500,"WARNING":100}}}
-
-Example 4 (Point in time):
-Query: "What happened at 14:18?"
-{"bplus":{"used":true,"ranges":[{"start_time":"14:15:30","end_time":"14:20:30"}]},"trie":{"used":false,"keywords":[]},"heap":{"used":true,"top_k":10,"tags":{"CRITICAL":1000,"ERROR":500,"WARNING":100,"INFO":50}}}
-
-Example 5 (Raw unranked request):
-Query: "Show all logs between 11:20:00 and 11:30:00 without ranking"
-{"bplus":{"used":true,"ranges":[{"start_time":"11:20:00","end_time":"11:30:00"}]},"trie":{"used":false,"keywords":[]},"heap":{"used":false,"top_k":0,"tags":{}}}`,
+Output strictly valid JSON, no markdown, no explanation:`,
         format: "json",
         stream: false,
       }),

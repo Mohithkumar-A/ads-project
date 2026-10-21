@@ -13,7 +13,7 @@ import {
   Loader2,
   AlertTriangle,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useState, useRef, useEffect, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import type { LogRecord } from "./mock-api";
 export function AppShell({ children }: { children: ReactNode }) {
@@ -230,91 +230,302 @@ export function TreeGraphic({
   keywords?: string[] | undefined;
   dsaMetrics?: import("./mock-api").DSAMetrics | undefined;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({
+    width: 900,
+    height: 420,
+  });
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [selectedHeapRank, setSelectedHeapRank] = useState<number>(1);
+  const dragMovedRef = useRef(false);
+  const hasInitializedRef = useRef<string | null>(null);
+  const [selectedHeapNodeIndex, setSelectedHeapNodeIndex] = useState<number | null>(0);
 
-  const handleZoomIn = () =>
-    setTransform((prev) => ({ ...prev, scale: Math.min(prev.scale + 0.2, 4) }));
-  const handleZoomOut = () =>
-    setTransform((prev) => ({ ...prev, scale: Math.max(prev.scale - 0.2, 0.5) }));
+  // Measure container dimensions responsively
+  useEffect(() => {
+    if (!containerRef.current) return undefined;
+    const updateSize = () => {
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          setContainerSize({ width: Math.round(rect.width), height: Math.round(rect.height) });
+        }
+      }
+    };
+    updateSize();
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(updateSize);
+      ro.observe(containerRef.current);
+      return () => ro.disconnect();
+    }
+    return undefined;
+  }, []);
+
+  const tp = dsaMetrics?.traversal_path;
+
+  // Compute Heap geometry if needed for initial centering and fit
+  const heapNodeCount =
+    tp && tp.type === "heap" && tp.initial_nodes && tp.initial_nodes.length > 0
+      ? tp.initial_nodes.length
+      : events && events.length > 0
+        ? events.length
+        : 0;
+  const heapMaxLevel = Math.max(0, Math.floor(Math.log2(Math.max(1, heapNodeCount))));
+  const heapSlotsAtBottom = Math.pow(2, heapMaxLevel);
+  const heapSvgWidth = Math.max(920, heapSlotsAtBottom * 154);
+  const heapSvgHeight = 90 + (heapMaxLevel + 1) * 118;
+
+  // Initialize at true 100% zoom with Root centered at top
+  useEffect(() => {
+    if (containerSize.width > 0 && hasInitializedRef.current !== `${type}-${heapNodeCount}`) {
+      hasInitializedRef.current = `${type}-${heapNodeCount}`;
+      if (type === "heap") {
+        setTransform({
+          x: Math.round(containerSize.width / 2 - heapSvgWidth / 2),
+          y: 20,
+          scale: 1,
+        });
+      } else {
+        setTransform({ x: 0, y: 0, scale: 1 });
+      }
+    }
+  }, [type, heapNodeCount, containerSize.width, heapSvgWidth]);
+
+  // Zoom and pan handlers
+  const handleZoomIn = () => {
+    setTransform((prev) => {
+      const newScale = Math.min(prev.scale + 0.2, 3);
+      const ratio = newScale / prev.scale;
+      const cX = containerSize.width / 2;
+      const cY = containerSize.height / 2;
+      return {
+        x: Math.round(cX - (cX - prev.x) * ratio),
+        y: Math.round(cY - (cY - prev.y) * ratio),
+        scale: Math.round(newScale * 100) / 100,
+      };
+    });
+  };
+
+  const handleZoomOut = () => {
+    setTransform((prev) => {
+      const newScale = Math.max(prev.scale - 0.2, 0.2);
+      const ratio = newScale / prev.scale;
+      const cX = containerSize.width / 2;
+      const cY = containerSize.height / 2;
+      return {
+        x: Math.round(cX - (cX - prev.x) * ratio),
+        y: Math.round(cY - (cY - prev.y) * ratio),
+        scale: Math.round(newScale * 100) / 100,
+      };
+    });
+  };
+
+  const handleReset100 = () => {
+    if (type === "heap") {
+      setTransform({
+        x: Math.round(containerSize.width / 2 - heapSvgWidth / 2),
+        y: 20,
+        scale: 1,
+      });
+    } else {
+      setTransform({ x: 0, y: 0, scale: 1 });
+    }
+  };
+
+  const handleFitView = () => {
+    if (type === "heap") {
+      const scaleX = (containerSize.width - 60) / heapSvgWidth;
+      const scaleY = (containerSize.height - 60) / heapSvgHeight;
+      const fitScale = Math.min(scaleX, scaleY, 1);
+      setTransform({
+        x: Math.round((containerSize.width - heapSvgWidth * fitScale) / 2),
+        y: 20,
+        scale: Math.max(0.18, Math.round(fitScale * 100) / 100),
+      });
+    } else {
+      setTransform({ x: 0, y: 0, scale: 1 });
+    }
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92;
+    setTransform((prev) => {
+      const newScale = Math.min(Math.max(prev.scale * zoomFactor, 0.2), 3);
+      const ratio = newScale / prev.scale;
+      const rect = containerRef.current?.getBoundingClientRect();
+      const mouseX = rect ? e.clientX - rect.left : containerSize.width / 2;
+      const mouseY = rect ? e.clientY - rect.top : containerSize.height / 2;
+      return {
+        x: Math.round(mouseX - (mouseX - prev.x) * ratio),
+        y: Math.round(mouseY - (mouseY - prev.y) * ratio),
+        scale: Math.round(newScale * 1000) / 1000,
+      };
+    });
+  };
 
   const handlePointerDown = (e: React.PointerEvent) => {
+    if ((e.target as HTMLElement)?.closest?.("button, input, select, a")) return;
+    e.preventDefault();
+    window.getSelection()?.removeAllRanges();
+    dragMovedRef.current = false;
     setIsDragging(true);
     setDragStart({ x: e.clientX - transform.x, y: e.clientY - transform.y });
-    e.currentTarget.setPointerCapture(e.pointerId);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {}
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
     if (!isDragging) return;
-    setTransform({ ...transform, x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+    e.preventDefault();
+    dragMovedRef.current = true;
+    setTransform((prev) => ({
+      ...prev,
+      x: e.clientX - dragStart.x,
+      y: e.clientY - dragStart.y,
+    }));
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
+    if (!isDragging) return;
     setIsDragging(false);
-    e.currentTarget.releasePointerCapture(e.pointerId);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {}
   };
 
   const renderSvg = (content: ReactNode, viewBox: string, extraOverlay?: ReactNode) => (
     <div
-      className="w-full h-full overflow-hidden touch-none relative"
+      ref={containerRef}
+      className="w-full h-full overflow-hidden touch-none relative select-none"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
-      style={{ cursor: isDragging ? "grabbing" : "grab" }}
+      onWheel={handleWheel}
+      style={{
+        cursor: isDragging ? "grabbing" : "grab",
+        userSelect: "none",
+        WebkitUserSelect: "none",
+        MozUserSelect: "none",
+      }}
     >
       {extraOverlay}
       <div
         style={{
           position: "absolute",
-          right: "10px",
-          bottom: "10px",
+          right: "12px",
+          bottom: "12px",
           display: "flex",
           gap: "5px",
+          alignItems: "center",
           zIndex: 10,
+          background: "var(--card)",
+          padding: "4px 6px",
+          borderRadius: "8px",
+          border: "1px solid var(--border)",
+          boxShadow: "0 4px 14px rgba(0, 0, 0, 0.3)",
         }}
       >
         <button
+          type="button"
           onPointerDown={(e) => {
             e.stopPropagation();
             handleZoomOut();
           }}
+          title="Zoom out"
           style={{
             background: "var(--background)",
             border: "1px solid var(--border)",
-            width: "30px",
-            height: "30px",
-            borderRadius: "4px",
+            width: "28px",
+            height: "28px",
+            borderRadius: "5px",
             color: "var(--foreground)",
             cursor: "pointer",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
+            fontWeight: "bold",
+            fontSize: "14px",
           }}
         >
-          -
+          −
         </button>
         <button
+          type="button"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            handleReset100();
+          }}
+          title="Reset to 100% zoom"
+          style={{
+            background: "var(--background)",
+            border: "1px solid var(--border)",
+            padding: "0 8px",
+            height: "28px",
+            borderRadius: "5px",
+            color:
+              Math.round(transform.scale * 100) === 100 ? "var(--primary)" : "var(--foreground)",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontFamily: "var(--font-mono)",
+            fontSize: "10px",
+            fontWeight: "bold",
+          }}
+        >
+          {Math.round(transform.scale * 100)}%
+        </button>
+        <button
+          type="button"
           onPointerDown={(e) => {
             e.stopPropagation();
             handleZoomIn();
           }}
+          title="Zoom in"
           style={{
             background: "var(--background)",
             border: "1px solid var(--border)",
-            width: "30px",
-            height: "30px",
-            borderRadius: "4px",
+            width: "28px",
+            height: "28px",
+            borderRadius: "5px",
             color: "var(--foreground)",
             cursor: "pointer",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
+            fontWeight: "bold",
+            fontSize: "14px",
           }}
         >
           +
+        </button>
+        <button
+          type="button"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            handleFitView();
+          }}
+          title="Fit entire tree into view"
+          style={{
+            background: "var(--background)",
+            border: "1px solid var(--border)",
+            padding: "0 8px",
+            height: "28px",
+            borderRadius: "5px",
+            color: "var(--muted-foreground)",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontFamily: "var(--font-mono)",
+            fontSize: "10px",
+          }}
+        >
+          Fit
         </button>
       </div>
       <svg
@@ -323,6 +534,7 @@ export function TreeGraphic({
         viewBox={viewBox}
         className={`tree-graphic ${large ? "tree-large" : ""}`}
         role="img"
+        style={{ userSelect: "none", WebkitUserSelect: "none" }}
       >
         <g
           style={{
@@ -336,7 +548,6 @@ export function TreeGraphic({
     </div>
   );
 
-  const tp = dsaMetrics?.traversal_path;
 
   // ── B+ Tree: Traversed Path Rendering ────────────────────
   if (type === "bplus") {
@@ -586,62 +797,7 @@ export function TreeGraphic({
     );
   }
 
-  // ── Heap: Complete Binary Tree with Sift-Down Traversal ────
-  const heapControls =
-    tp && tp.type === "heap" && tp.extractions.length > 0 ? (
-      <div
-        style={{
-          position: "absolute",
-          top: "10px",
-          left: "10px",
-          right: "80px",
-          display: "flex",
-          gap: "6px",
-          flexWrap: "wrap",
-          alignItems: "center",
-          zIndex: 10,
-        }}
-      >
-        <button
-          type="button"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={() => setSelectedHeapRank(0)}
-          style={{
-            background: selectedHeapRank === 0 ? "var(--primary)" : "var(--card)",
-            color: selectedHeapRank === 0 ? "#000" : "var(--foreground)",
-            border: "1px solid var(--border)",
-            padding: "3px 8px",
-            borderRadius: "4px",
-            fontSize: "11px",
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
-          Full Tree Overview
-        </button>
-        {tp.extractions.slice(0, 6).map((ex) => (
-          <button
-            key={ex.rank}
-            type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => setSelectedHeapRank(ex.rank)}
-            style={{
-              background: selectedHeapRank === ex.rank ? "var(--primary)" : "var(--card)",
-              color: selectedHeapRank === ex.rank ? "#000" : "var(--foreground)",
-              border: "1px solid var(--border)",
-              padding: "3px 8px",
-              borderRadius: "4px",
-              fontSize: "11px",
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            #{ex.rank} Sift ({ex.extracted_server})
-          </button>
-        ))}
-      </div>
-    ) : null;
-
+  // 1. Collect nodes to display (uncapped)
   // 1. Collect nodes to display (uncapped)
   const heapNodes: import("./mock-api").HeapNodeInfo[] = [];
 
@@ -669,11 +825,37 @@ export function TreeGraphic({
     );
   }
 
-  // 2. Compute Tree Coordinates for Arbitrary Depth Binary Tree
+  // 2. Compute Priority Rank for each node (Root #0 is Rank #1)
+  const rankMap = new Map<number, number>();
+  const sortedIndices = [...heapNodes.keys()].sort((a, b) => {
+    const sA = heapNodes[a]?.score ?? 0;
+    const sB = heapNodes[b]?.score ?? 0;
+    if (sB !== sA) return sB - sA;
+    return a - b;
+  });
+  sortedIndices.forEach((nodeIdx, rankZero) => {
+    rankMap.set(nodeIdx, rankZero + 1);
+  });
+
+  // Severity color helper
+  const getSeverityColor = (sev: string) => {
+    const s = sev.toUpperCase();
+    if (s.includes("CRIT") || s.includes("FATAL")) return "#ef4444";
+    if (s.includes("ERR")) return "#f97316";
+    if (s.includes("WARN")) return "#eab308";
+    if (s.includes("INFO")) return "#38bdf8";
+    return "var(--foreground)";
+  };
+
+  // 3. Compute Tree Coordinates for Arbitrary Depth Binary Tree
   const maxLevel = Math.floor(Math.log2(nodeCount));
   const slotsAtBottom = Math.pow(2, maxLevel);
-  const svgWidth = Math.max(800, slotsAtBottom * 85);
-  const svgHeight = 90 + (maxLevel + 1) * 95;
+  const cardW = 126;
+  const cardH = 56;
+  const leafSlotWidth = 154; // Guarantees 28px breathing room between adjacent leaf nodes
+  const levelSpacing = 118;  // Vertical space for edges and floating badges
+  const svgWidth = Math.max(920, slotsAtBottom * leafSlotWidth);
+  const svgHeight = 90 + (maxLevel + 1) * levelSpacing;
 
   const positions: [number, number, number, number][] = []; // [centerX, centerY, width, height]
 
@@ -684,14 +866,12 @@ export function TreeGraphic({
     const slotWidth = svgWidth / slotsInLevel;
 
     const cx = (posInLevel + 0.5) * slotWidth;
-    const cy = 75 + level * 95;
-    const w = Math.max(54, Math.min(114, slotWidth - 10));
-    const h = Math.max(36, Math.min(50, 52 - level * 2));
+    const cy = 85 + level * levelSpacing;
 
-    positions.push([cx, cy, w, h]);
+    positions.push([cx, cy, cardW, cardH]);
   }
 
-  // 3. Parent-Child Edges in Binary Tree: child i -> parent floor((i-1)/2)
+  // 4. Parent-Child Edges in Binary Tree: child i -> parent floor((i-1)/2)
   const treeEdges: { from: number; to: number }[] = [];
   for (let i = 1; i < nodeCount; i++) {
     const parent = Math.floor((i - 1) / 2);
@@ -700,31 +880,104 @@ export function TreeGraphic({
     }
   }
 
-  // 4. Determine Active Sift Path for selected rank
-  const extractions = tp && tp.type === "heap" ? tp.extractions : [];
-  const activeExtraction =
-    selectedHeapRank > 0
-      ? extractions.find((e) => e.rank === selectedHeapRank) ||
-        (selectedHeapRank <= extractions.length ? extractions[selectedHeapRank - 1] : null)
-      : null;
-
-  const siftNodesSet = new Set<number>();
-  const siftEdgeSet = new Set<string>();
-  const siftStepsMap = new Map<number, string>();
-
-  if (activeExtraction) {
-    activeExtraction.sift_path.forEach((sp, stepIdx) => {
-      siftNodesSet.add(sp.index);
-      siftStepsMap.set(sp.index, stepIdx === 0 ? "Root Sift" : `Step ${stepIdx + 1}`);
-      if (sp.swapped && sp.swapped_with !== undefined && sp.swapped_with >= 0) {
-        siftNodesSet.add(sp.swapped_with);
-        siftEdgeSet.add(`${sp.index}-${sp.swapped_with}`);
-        siftEdgeSet.add(`${sp.swapped_with}-${sp.index}`);
-      }
-    });
+  // 5. Active selection & lineage tracing
+  const ancestorEdges = new Set<string>();
+  const ancestorNodes = new Set<number>();
+  if (selectedHeapNodeIndex !== null && selectedHeapNodeIndex >= 0) {
+    let curr = selectedHeapNodeIndex;
+    ancestorNodes.add(curr);
+    while (curr > 0) {
+      const p = Math.floor((curr - 1) / 2);
+      ancestorEdges.add(`${p}-${curr}`);
+      ancestorNodes.add(p);
+      curr = p;
+    }
   }
 
-  const viewBox = `-30 0 ${svgWidth + 60} ${svgHeight + 30}`;
+  const selectedNode = selectedHeapNodeIndex !== null ? heapNodes[selectedHeapNodeIndex] : null;
+  const viewBox = `0 0 ${containerSize.width} ${containerSize.height}`;
+
+  const infoBannerOverlay = (
+    <div
+      style={{
+        position: "absolute",
+        top: "12px",
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 10,
+        pointerEvents: "none",
+        maxWidth: "92%",
+      }}
+    >
+      {selectedNode && selectedHeapNodeIndex !== null ? (
+        <div
+          style={{
+            background: "color-mix(in oklab, var(--primary) 14%, var(--card))",
+            border: "1px solid var(--primary)",
+            borderRadius: "8px",
+            padding: "6px 16px",
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            fontFamily: "var(--font-mono)",
+            fontSize: "11px",
+            boxShadow: "0 6px 20px rgba(0, 0, 0, 0.4)",
+            backdropFilter: "blur(10px)",
+            pointerEvents: "auto",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <span style={{ color: "#f59e0b", fontWeight: "bold" }}>
+            {rankMap.get(selectedHeapNodeIndex) === 1
+              ? "👑 #1 TOP PRIORITY"
+              : `Rank #${rankMap.get(selectedHeapNodeIndex)} Priority`}
+          </span>
+          <span style={{ color: "var(--border)" }}>·</span>
+          <span style={{ color: getSeverityColor(selectedNode.severity), fontWeight: "bold" }}>
+            [{selectedNode.severity}]
+          </span>
+          <span style={{ color: "var(--foreground)", fontWeight: 600 }}>
+            {selectedNode.server}
+          </span>
+          <span style={{ color: "var(--border)" }}>·</span>
+          <span style={{ color: "var(--primary)", fontWeight: "bold" }}>
+            Score {selectedNode.score}
+          </span>
+          {selectedNode.message && (
+            <>
+              <span style={{ color: "var(--border)" }}>·</span>
+              <span style={{ color: "var(--muted-foreground)" }}>
+                "{selectedNode.message.length > 70 ? selectedNode.message.slice(0, 70) + "…" : selectedNode.message}"
+              </span>
+            </>
+          )}
+        </div>
+      ) : (
+        <div
+          style={{
+            background: "color-mix(in oklab, var(--card) 90%, transparent)",
+            border: "1px solid var(--border)",
+            borderRadius: "20px",
+            padding: "5px 16px",
+            fontFamily: "var(--font-mono)",
+            fontSize: "10.5px",
+            color: "var(--muted-foreground)",
+            display: "flex",
+            gap: "8px",
+            alignItems: "center",
+            backdropFilter: "blur(6px)",
+            boxShadow: "0 2px 10px rgba(0,0,0,0.25)",
+          }}
+        >
+          <span style={{ color: "#f59e0b" }}>👑 Root is #1 Priority</span>
+          <span style={{ color: "var(--border)" }}>·</span>
+          <span>Rank Badges indicate Priority Order</span>
+          <span style={{ color: "var(--border)" }}>·</span>
+          <span style={{ color: "var(--primary)" }}>Click node to inspect</span>
+        </div>
+      )}
+    </div>
+  );
 
   return renderSvg(
     <>
@@ -734,46 +987,17 @@ export function TreeGraphic({
         </marker>
       </defs>
 
-      {/* Info Banner */}
-      {activeExtraction && (
-        <g>
-          <rect
-            x="20"
-            y="12"
-            width={Math.max(680, svgWidth - 40)}
-            height="26"
-            rx="5"
-            fill="color-mix(in oklab, var(--primary) 12%, var(--card))"
-            stroke="var(--primary)"
-            strokeWidth="1"
-          />
-          <text
-            x={svgWidth / 2}
-            y="29"
-            textAnchor="middle"
-            fontSize="11"
-            fill="var(--primary)"
-            fontWeight="bold"
-          >
-            Rank #{activeExtraction.rank} Extracted: {activeExtraction.extracted_severity} · {activeExtraction.extracted_server} (Score: {activeExtraction.extracted_score}) — Sift: {activeExtraction.sift_path.map((s) => `[${s.index}]`).join(" ➔ ")}
-          </text>
-        </g>
-      )}
-      {!activeExtraction && (
-        <text x="360" y="26" textAnchor="middle" fontSize="11" fill="var(--muted-foreground)">
-          Complete Binary Max-Heap Tree (Max at Root #0 with Score: {heapNodes[0]?.score ?? "—"})
-        </text>
-      )}
-
       {/* Tree Edges */}
       {treeEdges.map(({ from, to }) => {
         const pP = positions[from];
         const pC = positions[to];
         if (!pP || !pC) return null;
 
-        const isSiftEdge = siftEdgeSet.has(`${from}-${to}`);
-        const pY = pP[1] + pP[3] / 2;
-        const cY = pC[1] - pC[3] / 2;
+        const isHighlighted = ancestorEdges.has(`${from}-${to}`);
+        // Parent card bottom
+        const pY = pP[1] + cardH / 2;
+        // Child floating badge top
+        const cY = pC[1] - cardH / 2 - 8;
 
         return (
           <line
@@ -782,92 +1006,162 @@ export function TreeGraphic({
             y1={pY}
             x2={pC[0]}
             y2={cY}
-            className={`tree-edge ${isSiftEdge ? "edge-sift-active edge-active" : active ? "tree-edge" : ""}`}
-            stroke={isSiftEdge ? "var(--primary)" : "var(--border)"}
-            strokeWidth={isSiftEdge ? 2.5 : 1.5}
-            strokeDasharray={isSiftEdge ? "5 3" : undefined}
-            markerEnd={isSiftEdge ? "url(#heap-sift-arrow)" : undefined}
+            stroke={isHighlighted ? "var(--primary)" : "var(--border)"}
+            strokeWidth={isHighlighted ? 2.5 : 1.2}
+            strokeDasharray={isHighlighted ? "5 3" : undefined}
+            opacity={isHighlighted ? 1 : 0.6}
+            markerEnd={isHighlighted ? "url(#heap-sift-arrow)" : undefined}
           />
         );
       })}
 
-      {/* Tree Nodes */}
+      {/* Tree Nodes with Floating Badges */}
       {heapNodes.slice(0, nodeCount).map((node, i) => {
         const pos = positions[i];
         if (!pos) return null;
         const [cx, cy, w, h] = pos;
 
-        const isCritical = node.severity === "CRITICAL";
-        const inSift = siftNodesSet.has(i);
-        const stepLabel = siftStepsMap.get(i);
+        const rank = rankMap.get(i) ?? (i + 1);
+        const isRank1 = rank === 1;
+        const isTop3 = rank <= 3;
+        const isSelected = selectedHeapNodeIndex === i;
+        const isCritical =
+          node.severity.toUpperCase().includes("CRIT") ||
+          node.severity.toUpperCase().includes("FATAL");
+        const isError = node.severity.toUpperCase().includes("ERR");
+        const isWarning = node.severity.toUpperCase().includes("WARN");
+        const isAncestor = ancestorNodes.has(i);
+
+        // Compute Card Styling
+        let cardStroke = "var(--border)";
+        let cardStrokeWidth = 1;
+        let cardFill = "var(--card)";
+        let cardFilter: string | undefined = undefined;
+
+        if (isSelected) {
+          cardStroke = "var(--primary)";
+          cardStrokeWidth = 2.5;
+          cardFill = "color-mix(in oklab, var(--primary) 16%, var(--card))";
+          cardFilter = "drop-shadow(0 0 10px rgba(6, 182, 212, 0.45))";
+        } else if (isRank1) {
+          cardStroke = "#f59e0b";
+          cardStrokeWidth = 2;
+          cardFill = "color-mix(in oklab, #f59e0b 10%, var(--card))";
+          cardFilter = "drop-shadow(0 0 8px rgba(245, 158, 11, 0.25))";
+        } else if (isAncestor) {
+          cardStroke = "color-mix(in oklab, var(--primary) 70%, var(--border))";
+          cardStrokeWidth = 1.8;
+          cardFill = "color-mix(in oklab, var(--primary) 8%, var(--card))";
+        } else if (isCritical) {
+          cardStroke = "rgba(239, 68, 68, 0.6)";
+          cardStrokeWidth = 1.5;
+          cardFill = "color-mix(in oklab, #ef4444 8%, var(--card))";
+        } else if (isError) {
+          cardStroke = "rgba(249, 115, 22, 0.5)";
+          cardStrokeWidth = 1.2;
+          cardFill = "color-mix(in oklab, #f97316 6%, var(--card))";
+        } else if (isWarning) {
+          cardStroke = "rgba(234, 179, 8, 0.4)";
+          cardStrokeWidth = 1.2;
+          cardFill = "color-mix(in oklab, #eab308 5%, var(--card))";
+        }
+
+        // Floating Rank Badge metrics
+        const badgeW = isRank1 ? 84 : isTop3 ? 40 : 36;
+        const badgeH = 18;
+        const badgeY = cy - h / 2 - 9;
+        const badgeX = cx - badgeW / 2;
 
         return (
           <g
             key={`heap-node-${i}`}
-            className={`tree-node ${active ? "node-active" : ""} ${isCritical ? "node-critical" : ""} ${inSift ? "node-sift-active" : ""}`}
+            className="heap-node-group"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (dragMovedRef.current) return;
+              setSelectedHeapNodeIndex(selectedHeapNodeIndex === i ? null : i);
+            }}
           >
+            {/* Main Card */}
             <rect
+              className="heap-card-rect"
               x={cx - w / 2}
               y={cy - h / 2}
               width={w}
               height={h}
-              rx={6}
-              stroke={inSift ? "var(--primary)" : undefined}
-              strokeWidth={inSift ? 2.5 : undefined}
+              rx={8}
+              fill={cardFill}
+              stroke={cardStroke}
+              strokeWidth={cardStrokeWidth}
+              style={{ filter: cardFilter }}
             />
-            {/* Node index */}
+
+            {/* Floating Priority Rank Badge centered on top edge */}
+            <rect
+              className="heap-badge-rect"
+              x={badgeX}
+              y={badgeY}
+              width={badgeW}
+              height={badgeH}
+              rx={9}
+              fill={
+                isRank1
+                  ? "#f59e0b"
+                  : isTop3
+                    ? "color-mix(in oklab, var(--primary) 22%, var(--card))"
+                    : "var(--card)"
+              }
+              stroke={isRank1 ? "#d97706" : isTop3 ? "var(--primary)" : "var(--border)"}
+              strokeWidth={isRank1 ? 1 : isTop3 ? 1.2 : 1}
+              style={
+                isRank1 ? { filter: "drop-shadow(0 2px 4px rgba(245, 158, 11, 0.4))" } : undefined
+              }
+            />
             <text
-              x={cx - w / 2 + 6}
-              y={cy - h / 2 + 12}
-              fontSize="8"
-              fill="var(--muted-foreground)"
-              fontWeight="bold"
+              className="heap-badge-text"
+              x={cx}
+              y={cy - h / 2 + 3.5}
+              textAnchor="middle"
+              fontSize={isRank1 ? "9" : "8.5"}
+              fill={isRank1 ? "#090d16" : isTop3 ? "var(--primary)" : "var(--muted-foreground)"}
+              fontWeight={isRank1 ? "800" : isTop3 ? "700" : "600"}
             >
-              #{node.index}
+              {isRank1 ? "👑 #1 TOP" : `#${rank}`}
             </text>
 
-            {/* Sift step label */}
-            {stepLabel && (
-              <text
-                x={cx + w / 2 - 6}
-                y={cy - h / 2 + 12}
-                textAnchor="end"
-                fontSize="8"
-                fill="var(--primary)"
-                fontWeight="bold"
-              >
-                {stepLabel}
-              </text>
-            )}
-
-            {/* Severity */}
+            {/* Severity Tag */}
             <text
+              className="heap-severity-text"
               x={cx}
-              y={cy + 1}
+              y={cy + 2}
               textAnchor="middle"
-              fontSize={h < 48 ? "9" : "11"}
-              fontWeight="700"
+              fontSize="11"
+              fontWeight="800"
+              letterSpacing="0.06em"
+              fill={getSeverityColor(node.severity)}
             >
               {node.severity}
             </text>
 
-            {/* Server & Score */}
+            {/* Server & Priority Score */}
             <text
+              className="heap-meta-text"
               x={cx}
-              y={cy + 14}
+              y={cy + 18}
               textAnchor="middle"
-              fontSize="8"
-              fill="var(--primary)"
-              fontWeight="bold"
+              fontSize="8.5"
             >
-              {node.server} · {node.score}
+              <tspan fill="var(--muted-foreground)">{node.server}</tspan>
+              <tspan fill="var(--border)"> · </tspan>
+              <tspan fill="var(--primary)" fontWeight="bold">
+                {node.score} pts
+              </tspan>
             </text>
           </g>
         );
       })}
     </>,
     viewBox,
-    heapControls,
   );
 }
 export function Pipeline({

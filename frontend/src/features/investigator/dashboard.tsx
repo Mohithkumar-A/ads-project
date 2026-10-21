@@ -58,6 +58,15 @@ export function Dashboard() {
 
   const [isDragging, setIsDragging] = useState(false);
   const upload = useRef<HTMLInputElement>(null);
+  const lineNumbersRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleEditorScroll = () => {
+    if (lineNumbersRef.current && textareaRef.current) {
+      lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
+    }
+  };
+
   const logs = parseLogs(text);
 
   const stats = [
@@ -213,15 +222,16 @@ export function Dashboard() {
               <span>PLAIN TEXT · UTF-8</span>
             </div>
             <div className="log-editor">
-              <div className="line-numbers">
-                {text
-                  .split("\n")
-                  .slice(0, 20)
-                  .map((_, i) => (
-                    <div key={i}>{String(i + 1).padStart(2, "0")}</div>
-                  ))}
+              <div className="line-numbers" ref={lineNumbersRef}>
+                {text.split("\n").map((_, i) => (
+                  <div key={i}>
+                    {String(i + 1).padStart(text.split("\n").length >= 100 ? 3 : 2, "0")}
+                  </div>
+                ))}
               </div>
               <textarea
+                ref={textareaRef}
+                onScroll={handleEditorScroll}
                 aria-label="Log dataset"
                 value={text}
                 onChange={(e) => updateDataset(e.target.value)}
@@ -532,7 +542,7 @@ export function Dashboard() {
               ["Top K", result?.tool_call.heap.used ? String(result.tool_call.heap.top_k) : "10"],
               [
                 "Highest severity",
-                result?.evidence.length ? (
+                result?.evidence[0]?.severity ? (
                   <SeverityBadge severity={result.evidence[0].severity} />
                 ) : (
                   "—"

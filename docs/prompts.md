@@ -30,7 +30,7 @@ For every prompt, this document details:
   "heap": {
     "used": true,
     "top_k": 10,
-    "tags": { "database": 1000, "timeout": 800, "deadlock": 1000 }
+    "tags": { "CRITICAL": 1000, "ERROR": 500, "WARNING": 100 }
   }
 }
 ```
@@ -102,7 +102,7 @@ For every prompt, this document details:
   "heap": {
     "used": true,
     "top_k": 8,
-    "tags": { "auth": 1000, "token": 900 }
+    "tags": { "CRITICAL": 1000, "ERROR": 500, "WARNING": 100 }
   }
 }
 ```
@@ -155,7 +155,7 @@ For every prompt, this document details:
 {
   "bplus": {
     "used": false,
-    "ranges": [{ "start_time": "00:00:00", "end_time": "23:59:59" }]
+    "ranges": []
   },
   "trie": {
     "used": true,
@@ -164,7 +164,7 @@ For every prompt, this document details:
   "heap": {
     "used": true,
     "top_k": 6,
-    "tags": { "stripe": 1000, "timeout": 800 }
+    "tags": { "CRITICAL": 1000, "ERROR": 500, "WARNING": 100 }
   }
 }
 ```
@@ -213,7 +213,7 @@ For every prompt, this document details:
 {
   "bplus": {
     "used": false,
-    "ranges": [{ "start_time": "00:00:00", "end_time": "23:59:59" }]
+    "ranges": []
   },
   "trie": {
     "used": true,
@@ -222,7 +222,7 @@ For every prompt, this document details:
   "heap": {
     "used": true,
     "top_k": 6,
-    "tags": { "oom": 1000, "memory": 900 }
+    "tags": { "CRITICAL": 1000, "ERROR": 500, "WARNING": 100 }
   }
 }
 ```
