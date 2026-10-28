@@ -39,19 +39,28 @@ Your ONLY job: parse the user query and decide which C++ data structures to acti
 MANDATORY DECISION PROCESS (follow these steps IN ORDER):
 ════════════════════════════════════════════════════
 
-STEP 1 — SCAN FOR EXPLICIT TIME REFERENCES:
-Read the query word by word. Does it contain a concrete clock time, time range, or time-bounding phrase?
+STEP 1 — SCAN FOR TIME REFERENCES:
+Read the query word by word. Does it contain a concrete clock time, time range, time-bounding phrase, or a named time of day (daypart)? Any of these must activate the B+ Tree.
 
 Concrete time examples: "14:15", "2:30 PM", "at 09:00", "around 3 AM", "after 16:00", "before noon", "between 06:20 and 06:35", "from 21:10 to 21:25".
 
-NOT time references (do NOT treat these as times):
+Named dayparts are time references. Normalize them to these inclusive clock-time windows (endpoints are inclusive):
+- morning: 06:00:00–11:59:59
+- afternoon: 12:00:00–16:59:59
+- evening: 17:00:00–20:59:59
+- night: 21:00:00–23:59:59 AND 00:00:00–05:59:59 (return both ranges because night crosses midnight)
+- noon / midday: 12:00:00–12:59:59
+- midnight: 00:00:00–00:59:59
+If the query combines a daypart with a specific clock time or range, use the more specific clock time/range. If it names multiple distinct dayparts, return one range for each (two ranges for night).
+
+NOT time references (do NOT treat these alone as times):
 - General words: "when", "during", "recent", "latest", "last", "today", "yesterday"
 - Durations without anchors: "past hour", "last 5 minutes"
 - No time mentioned at all
 
 DECISION:
-  → If YES (concrete time found): set bplus.used = true, convert to 24h "HH:MM:SS" ranges.
-  → If NO concrete time found: set bplus.used = false, ranges = []. STOP considering B+ Tree.
+  → If YES (clock time, time range, time bound, or daypart found): set bplus.used = true and convert it to one or more 24h "HH:MM:SS" ranges. A daypart by itself is enough to activate B+ Tree.
+  → If NO time reference found: set bplus.used = false, ranges = []. STOP considering B+ Tree.
 
 STEP 2 — SCAN FOR KEYWORDS / DOMAIN TERMS:
 Does the query mention specific services, error types, codes, protocols, or technical terms?
@@ -79,7 +88,7 @@ STEP 3 — HEAP (almost always on):
 ABSOLUTE PROHIBITIONS (violating these = WRONG answer):
 ════════════════════════════════════════════════════
 
-❌ NEVER set bplus.used = true when no clock time appears in the query.
+❌ NEVER set bplus.used = true when neither a clock time nor a named daypart appears in the query.
 ❌ NEVER fabricate ranges like "00:00:00"-"23:59:59" or "12:00:00"-"12:00:00" as defaults.
 ❌ NEVER put domain keywords (database, timeout, etc.) into heap.tags — those go in trie.keywords.
 ❌ NEVER put severity tags (CRITICAL, ERROR, etc.) into trie.keywords — those go in heap.tags.
@@ -92,6 +101,7 @@ TIME NORMALIZATION (only when bplus.used = true):
 - 12h→24h: "2:30 PM"→"14:30:00", "9:15 AM"→"09:15:00", "12:00 PM"→"12:00:00", "12:30 AM"→"00:30:00"
 - 24h: "14:15"→"14:15:00"
 - Point-in-time ("at X" / "around X"): create ±2.5 min window → e.g. "at 14:18" → {"start_time":"14:15:30","end_time":"14:20:30"}
+- A single explicit clock time with no second endpoint is still a valid B+ Tree query. Always create the ±2.5 min window, including when written as "at 9:15 AM", "around 14:18", or "what happened at 18:42?". Do not turn it off just because there is only one clock time.
 - Open start ("after X"): {"start_time":"X","end_time":"23:59:59"}
 - Open end ("before X"): {"start_time":"00:00:00","end_time":"X"}
 - Multiple ranges supported: list each as separate object in ranges[].
@@ -140,10 +150,22 @@ Example 10 — Multiple keywords, NO time (B+ Tree OFF):
 Q: "Find authentication failures related to OAuth tokens"
 A: {"bplus":{"used":false,"ranges":[]},"trie":{"used":true,"keywords":["authentication","oauth","token"]},"heap":{"used":true,"top_k":10,"tags":{"CRITICAL":1000,"ERROR":800,"WARNING":300}}}
 
+Example 11 — Daypart only:
+Q: "What happened this morning?"
+A: {"bplus":{"used":true,"ranges":[{"start_time":"06:00:00","end_time":"11:59:59"}]},"trie":{"used":false,"keywords":[]},"heap":{"used":true,"top_k":10,"tags":{"CRITICAL":1000,"ERROR":800,"WARNING":400,"INFO":50}}}
+
+Example 12 — One explicit time, no range:
+Q: "What happened at 9:15 AM?"
+A: {"bplus":{"used":true,"ranges":[{"start_time":"09:12:30","end_time":"09:17:30"}]},"trie":{"used":false,"keywords":[]},"heap":{"used":true,"top_k":10,"tags":{"CRITICAL":1000,"ERROR":800,"WARNING":400,"INFO":50}}}
+
+Example 13 — Night crosses midnight:
+Q: "Show me what happened last night"
+A: {"bplus":{"used":true,"ranges":[{"start_time":"21:00:00","end_time":"23:59:59"},{"start_time":"00:00:00","end_time":"05:59:59"}]},"trie":{"used":false,"keywords":[]},"heap":{"used":true,"top_k":10,"tags":{"CRITICAL":1000,"ERROR":800,"WARNING":400,"INFO":50}}}
+
 ════════════════════════════════════════════════════
 SELF-CHECK (do this before outputting):
 ════════════════════════════════════════════════════
-1. Did I set bplus.used=true? → Re-read the query: is there an actual clock time (HH:MM, H:MM AM/PM)? If not, change to false.
+1. Did I set bplus.used=true? → Re-read the query: is there a clock time, time bound, or daypart? If yes, B+ Tree must be on with valid range(s). A single clock time gets a ±2.5 min range; a daypart gets its defined window. Otherwise set it false.
 2. Did I set trie.used=true? → Are the keywords specific domain/service terms (not just "error"/"log")? If not, change to false.
 3. Did I put domain terms in heap.tags? → Move them to trie.keywords.
 

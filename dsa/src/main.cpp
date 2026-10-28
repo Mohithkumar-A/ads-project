@@ -201,6 +201,7 @@ int main(int argc, char *argv[]) {
     }
 
     std::unordered_map<int, LogRecord *> uniqueLogs;
+    int totalRangeNodesAccessed = 0;
 
     std::string logDatePrefix = (!allLogs.empty() && allLogs[0].timestamp.length() >= 10)
                                     ? allLogs[0].timestamp.substr(0, 10)
@@ -219,6 +220,7 @@ int main(int argc, char *argv[]) {
         bEnd = (bEnd.length() <= 8) ? (logDatePrefix + " " + bEnd) : bEnd;
 
         auto results = bpt.searchRange(bStart, bEnd);
+        totalRangeNodesAccessed += bpt.getNodesAccessed();
         for (LogRecord *rec : results) {
           uniqueLogs[rec->id] = rec;
         }
@@ -233,7 +235,7 @@ int main(int argc, char *argv[]) {
 
     auto end = high_resolution_clock::now();
     bplusTime = duration<double, std::milli>(end - start).count();
-    bplusNodes = bpt.getNodesAccessed();
+    bplusNodes = totalRangeNodesAccessed;
     bplusPath = bpt.getTraversalPath();
   }
 
@@ -379,6 +381,42 @@ int main(int argc, char *argv[]) {
               << "\",\"label\":\"" << escapeJSONString(e.label) << "\"}";
     if (i < bplusPath.edges.size() - 1)
       std::cout << ",";
+    std::cout << "\n";
+  }
+  std::cout << "        ],\n";
+  std::cout << "        \"searches\": [\n";
+  for (size_t s = 0; s < bplusPath.searches.size(); s++) {
+    const auto &search = bplusPath.searches[s];
+    std::cout << "          {\"start_time\":\"" << escapeJSONString(search.start_time)
+              << "\",\"end_time\":\"" << escapeJSONString(search.end_time)
+              << "\",\"nodes_accessed\":" << search.nodes_accessed
+              << ",\"results_count\":" << search.results_count << ",\"nodes\":[";
+    for (size_t i = 0; i < search.nodes.size(); i++) {
+      const auto &n = search.nodes[i];
+      std::cout << "{\"id\":\"" << escapeJSONString(n.id) << "\",\"type\":\""
+                << escapeJSONString(n.type) << "\",\"keys\":[";
+      for (size_t k = 0; k < n.keys.size(); k++) {
+        std::cout << "\"" << escapeJSONString(n.keys[k]) << "\"";
+        if (k + 1 < n.keys.size()) std::cout << ",";
+      }
+      std::cout << "],\"matched_keys\":[";
+      for (size_t k = 0; k < n.matched_keys.size(); k++) {
+        std::cout << "\"" << escapeJSONString(n.matched_keys[k]) << "\"";
+        if (k + 1 < n.matched_keys.size()) std::cout << ",";
+      }
+      std::cout << "],\"chosen_branch\":" << n.chosen_branch << "}";
+      if (i + 1 < search.nodes.size()) std::cout << ",";
+    }
+    std::cout << "],\"edges\":[";
+    for (size_t i = 0; i < search.edges.size(); i++) {
+      const auto &e = search.edges[i];
+      std::cout << "{\"from\":\"" << escapeJSONString(e.from) << "\",\"to\":\""
+                << escapeJSONString(e.to) << "\",\"label\":\""
+                << escapeJSONString(e.label) << "\"}";
+      if (i + 1 < search.edges.size()) std::cout << ",";
+    }
+    std::cout << "]}";
+    if (s + 1 < bplusPath.searches.size()) std::cout << ",";
     std::cout << "\n";
   }
   std::cout << "        ]\n";

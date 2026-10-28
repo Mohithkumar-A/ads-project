@@ -9,7 +9,7 @@ import dsaRouter from "./routes/dsa";
 import { ensureTempDir } from "./utils/fileManager";
 
 const PORT = parseInt(process.env.PORT || "3001", 10);
-const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:8080";
 
 async function main() {
   // Ensure the temp directory exists before accepting requests

@@ -125,10 +125,20 @@ export interface BPlusTraceEdge {
   label: string;
 }
 
+export interface BPlusRangeSearchTrace {
+  start_time: string;
+  end_time: string;
+  nodes_accessed: number;
+  results_count: number;
+  nodes: BPlusTraceNode[];
+  edges: BPlusTraceEdge[];
+}
+
 export interface BPlusTraversalPath {
   type: "bplus";
   nodes: BPlusTraceNode[];
   edges: BPlusTraceEdge[];
+  searches?: BPlusRangeSearchTrace[];
 }
 
 export interface TrieTraceStep {

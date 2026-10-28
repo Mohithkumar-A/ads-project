@@ -50,11 +50,11 @@ fi
 
 (cd "$ROOT_DIR/backend" && npm run dev) &
 BACKEND_PID=$!
-(cd "$ROOT_DIR/frontend" && npm run dev -- --host 127.0.0.1) &
+(cd "$ROOT_DIR/frontend" && npm run dev) &
 FRONTEND_PID=$!
 
 echo "Backend:  http://localhost:3001"
-echo "Frontend: http://localhost:5173"
+echo "Frontend: http://localhost:8080"
 if command -v ollama >/dev/null 2>&1; then
   echo "LLM model: llama3.1:latest (ensure it is downloaded with: ollama pull llama3.1:latest)"
 fi

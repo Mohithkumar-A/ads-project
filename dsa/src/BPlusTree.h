@@ -25,9 +25,19 @@ struct BPlusTraceEdge {
     std::string label;      // e.g. ">= 14:10:00", "next pointer"
 };
 
+struct BPlusRangeSearchTrace {
+    std::string start_time;
+    std::string end_time;
+    int nodes_accessed;
+    int results_count;
+    std::vector<BPlusTraceNode> nodes;
+    std::vector<BPlusTraceEdge> edges;
+};
+
 struct BPlusTraversalPath {
     std::vector<BPlusTraceNode> nodes;
     std::vector<BPlusTraceEdge> edges;
+    std::vector<BPlusRangeSearchTrace> searches;
 };
 
 struct BPlusNode {

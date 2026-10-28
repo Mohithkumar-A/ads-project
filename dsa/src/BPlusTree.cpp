@@ -295,8 +295,13 @@ std::vector<LogRecord*> BPlusTree::searchRange(const std::string& start_time, co
 
     // Sequentially scan leaf linked list across the query range
     int leafIdx = 0;
+    bool firstLeafVisit = true;
     while (cursor != nullptr) {
-        nodesAccessed++;
+        // The starting leaf was already counted while descending from its
+        // parent (or as the root for a one-node tree). Count only linked
+        // leaves visited after that first leaf here.
+        if (!firstLeafVisit) nodesAccessed++;
+        firstLeafVisit = false;
         std::string leafId = "leaf-" + std::to_string(leafIdx);
 
         BPlusTraceNode leafTrace;
@@ -322,20 +327,36 @@ std::vector<LogRecord*> BPlusTree::searchRange(const std::string& start_time, co
             }
         }
 
-        // Record traversal edges between parent and leaves or across leaves
-        if (leafIdx == 0) {
-            traversalPath.edges.push_back({prevId, leafId, "match start"});
+        // A one-node tree is itself a leaf; update its root trace instead of
+        // drawing/counting a second, imaginary leaf below it.
+        if (leafIdx == 0 && cursor == root && root->isLeaf) {
+            traversalPath.nodes.front().type = "leaf";
+            traversalPath.nodes.front().matched_keys = leafTrace.matched_keys;
         } else {
-            std::string prevLeafId = "leaf-" + std::to_string(leafIdx - 1);
-            traversalPath.edges.push_back({prevLeafId, leafId, "next pointer (range scan)"});
+            // Record traversal edges between parent and leaves or across leaves.
+            if (leafIdx == 0) {
+                traversalPath.edges.push_back({prevId, leafId, "match start"});
+            } else {
+                std::string prevLeafId = "leaf-" + std::to_string(leafIdx - 1);
+                traversalPath.edges.push_back({prevLeafId, leafId, "next pointer (range scan)"});
+            }
+            traversalPath.nodes.push_back(leafTrace);
         }
-        traversalPath.nodes.push_back(leafTrace);
 
         if (done) break;
         // Advance to next leaf node via leaf chaining pointer
         cursor = cursor->next;
         leafIdx++;
     }
+
+    BPlusRangeSearchTrace searchTrace;
+    searchTrace.start_time = start_time;
+    searchTrace.end_time = end_time;
+    searchTrace.nodes_accessed = nodesAccessed;
+    searchTrace.results_count = static_cast<int>(result.size());
+    searchTrace.nodes = traversalPath.nodes;
+    searchTrace.edges = traversalPath.edges;
+    traversalPath.searches.push_back(searchTrace);
 
     return result;
 }

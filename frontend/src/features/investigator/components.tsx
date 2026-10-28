@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { useState, useRef, useEffect, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import type { LogRecord } from "./mock-api";
+import type { BPlusRangeSearchTrace, LogRecord } from "./mock-api";
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [open, setOpen] = useState(false);
@@ -211,6 +211,89 @@ export function LogTable({ logs, priority = false }: { logs: LogRecord[]; priori
     </div>
   );
 }
+
+export function BPlusRangeSearches({ searches }: { searches: BPlusRangeSearchTrace[] }) {
+  const displayTime = (value: string) => value.slice(11, 19) || value;
+  const dayPosition = (value: string) => {
+    const [hours = 0, minutes = 0, seconds = 0] = value.slice(-8).split(":").map(Number);
+    return ((hours * 3600 + minutes * 60 + seconds) / 86400) * 100;
+  };
+
+  return (
+    <div className="bplus-search-list" aria-label="B+ Tree searches by requested range">
+      {searches.map((search, searchIndex) => (
+        <article
+          className="bplus-search-row"
+          key={`${search.start_time}-${search.end_time}-${searchIndex}`}
+        >
+          <header className="bplus-search-head">
+            <strong>Range {searchIndex + 1}</strong>
+            <span className="bplus-search-range">
+              {displayTime(search.start_time)} → {displayTime(search.end_time)}
+            </span>
+            <span>{search.nodes_accessed} nodes visited</span>
+            <span>{search.results_count} logs matched</span>
+          </header>
+          <div
+            className="bplus-time-band"
+            aria-label={`Searched range ${displayTime(search.start_time)} to ${displayTime(search.end_time)}`}
+          >
+            <span>00:00</span>
+            <div className="bplus-time-track">
+              <span
+                className="bplus-time-selection"
+                style={{
+                  left: `${dayPosition(search.start_time)}%`,
+                  width: `${Math.max(0.7, dayPosition(search.end_time) - dayPosition(search.start_time))}%`,
+                }}
+              />
+              <span
+                className="bplus-time-marker bplus-time-marker-start"
+                style={{ left: `${dayPosition(search.start_time)}%` }}
+              />
+              <span
+                className="bplus-time-marker bplus-time-marker-end"
+                style={{ left: `${dayPosition(search.end_time)}%` }}
+              />
+            </div>
+            <span>24:00</span>
+          </div>
+          <div className="bplus-search-path">
+            {search.nodes.map((node, nodeIndex) => {
+              const nodeKind = node.type === "root" ? "Root" : node.type === "leaf" ? "Leaf" : "Index";
+              const keys = node.keys.map(displayTime).join(" · ");
+              return (
+                <div className="bplus-search-step" key={`${node.id}-${nodeIndex}`}>
+                  <div
+                    className={`bplus-trace-node ${nodeKind === "Leaf" && node.matched_keys.length ? "bplus-trace-match" : ""}`}
+                  >
+                    <small>
+                      {nodeKind}
+                      {node.chosen_branch >= 0 ? ` · branch ${node.chosen_branch + 1}` : ""}
+                    </small>
+                    <strong>{keys || (nodeKind === "Root" ? "Time index" : "—")}</strong>
+                    {nodeKind === "Leaf" && (
+                      <small>
+                        {node.matched_keys.length} matching timestamp key
+                        {node.matched_keys.length === 1 ? "" : "s"}
+                      </small>
+                    )}
+                  </div>
+                  {nodeIndex < search.nodes.length - 1 && (
+                    <span className="bplus-trace-arrow" aria-hidden="true">
+                      →
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 export function TreeGraphic({
   type = "bplus",
   large = false,

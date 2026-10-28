@@ -1193,6 +1193,122 @@ h1 {
   display: flex;
   align-items: center;
 }
+.bplus-search-list {
+  width: 100%;
+  max-height: 540px;
+  overflow-y: auto;
+  display: grid;
+  gap: 12px;
+}
+.bplus-search-row {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: color-mix(in oklab, var(--card) 92%, transparent);
+}
+.bplus-search-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-bottom: 10px;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.bplus-search-head strong {
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 12px;
+}
+.bplus-search-range {
+  color: var(--primary);
+}
+.bplus-time-band {
+  display: grid;
+  grid-template-columns: 42px minmax(120px, 1fr) 42px;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 8px;
+}
+.bplus-time-band > span:last-child {
+  text-align: right;
+}
+.bplus-time-track {
+  position: relative;
+  height: 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--muted);
+}
+.bplus-time-selection {
+  position: absolute;
+  top: -1px;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--success, #4ade80) 65%, transparent);
+}
+.bplus-time-marker {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 12px;
+  background: var(--success, #4ade80);
+}
+.bplus-time-marker-start {
+  transform: translateX(-1px);
+}
+.bplus-time-marker-end {
+  transform: translateX(-1px);
+}
+.bplus-search-path {
+  display: flex;
+  align-items: stretch;
+  gap: 7px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.bplus-search-step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.bplus-trace-node {
+  display: grid;
+  gap: 4px;
+  min-width: 125px;
+  max-width: 220px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in oklab, var(--primary) 55%, var(--border));
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--primary) 7%, var(--card));
+  font-family: var(--font-mono);
+}
+.bplus-trace-node small {
+  color: var(--muted-foreground);
+  font-size: 9px;
+}
+.bplus-trace-node strong {
+  overflow-wrap: anywhere;
+  color: var(--foreground);
+  font-size: 10px;
+  font-weight: 500;
+}
+.bplus-trace-node.bplus-trace-match {
+  border-color: var(--success, #4ade80);
+  background: color-mix(in oklab, var(--success, #4ade80) 10%, var(--card));
+}
+.bplus-trace-node.bplus-trace-match strong {
+  color: var(--success, #4ade80);
+}
+.bplus-trace-arrow {
+  color: var(--primary);
+  font-size: 14px;
+}
 .tree-large {
   height: 280px;
   max-width: 800px;

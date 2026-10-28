@@ -4,13 +4,13 @@ import {
   PageHeader,
   Panel,
   SectionHeading,
+  BPlusRangeSearches,
   TreeGraphic,
   Metric,
   LogTable,
   SeverityBadge,
 } from "./components";
 import { useInvestigationStore } from "./store";
-import { parseLogs } from "./mock-api";
 
 export function BPlusPage() {
   const [store] = useInvestigationStore();
@@ -22,11 +22,9 @@ export function BPlusPage() {
       ? result.tool_call.bplus.ranges.map((r) => `${r.start_time}-${r.end_time}`)
       : ["—"];
   const metrics = result?.dsa_metrics?.find((m) => m.name === "B+ Tree");
+  const bplusPath = metrics?.traversal_path?.type === "bplus" ? metrics.traversal_path : undefined;
+  const rangeSearches = bplusPath?.searches ?? [];
   const evidence = used && result?.evidence ? result.evidence : [];
-
-  // To visualize the full B+ Tree accurately, we pass all available logs,
-  // not just the Top K evidence returned by the pipeline.
-  const allLogs = parseLogs(store.text);
 
   return (
     <AppShell>
@@ -42,7 +40,7 @@ export function BPlusPage() {
       <div className="operation-grid mb-5" style={{ gridTemplateColumns: "1fr" }}>
         <Panel>
           <SectionHeading title="Timestamp index visualization">
-            <span className="section-tag">SCALABLE · ZOOM/PAN SUPPORTED</span>
+            <span className="section-tag">ACTUAL PATHS · ONE ROW PER RANGE</span>
           </SectionHeading>
           <div className="visualization-body relative overflow-hidden cursor-move">
             {!used && result && (
@@ -62,18 +60,21 @@ export function BPlusPage() {
                 </p>
               </div>
             )}
-            <TreeGraphic
-              type="bplus"
-              large
-              active={used}
-              range={range}
-              events={allLogs}
-              dsaMetrics={metrics}
-            />
+            {rangeSearches.length > 0 ? (
+              <BPlusRangeSearches searches={rangeSearches} />
+            ) : (
+              <TreeGraphic
+                type="bplus"
+                large
+                active={used}
+                range={range}
+                dsaMetrics={metrics}
+              />
+            )}
           </div>
           <div className="visualization-legend">
             <span className="legend-key">
-              <span className="legend-square" /> Active retrieval path for current query
+              <span className="legend-square" /> Actual root-to-leaf traversal; matching leaves highlighted
             </span>
             <span>{range.join(" → ")}</span>
           </div>
