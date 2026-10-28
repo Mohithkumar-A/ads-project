@@ -1,6 +1,7 @@
 #include "BPlusTree.h"
 #include <iostream>
 
+// Initialize node state and clear child pointers
 BPlusNode::BPlusNode(bool leaf) {
     isLeaf = leaf;
     size = 0;
@@ -10,15 +11,18 @@ BPlusNode::BPlusNode(bool leaf) {
     }
 }
 
+// Initialize empty tree and reset access counter
 BPlusTree::BPlusTree() {
     root = nullptr;
     nodesAccessed = 0;
 }
 
+// Clean up all allocated nodes on destruction
 BPlusTree::~BPlusTree() {
     destroyTree(root);
 }
 
+// Recursively delete nodes in post-order traversal
 void BPlusTree::destroyTree(BPlusNode* cursor) {
     if (cursor != nullptr) {
         if (!cursor->isLeaf) {
@@ -30,9 +34,11 @@ void BPlusTree::destroyTree(BPlusNode* cursor) {
     }
 }
 
+// Insert a log record into the B+ tree using its timestamp as key
 void BPlusTree::insert(LogRecord* record) {
     std::string key = record->timestamp;
 
+    // Create a new leaf root if tree is empty
     if (root == nullptr) {
         root = new BPlusNode(true);
         root->keys[0] = key;
@@ -44,7 +50,7 @@ void BPlusTree::insert(LogRecord* record) {
     BPlusNode* cursor = root;
     BPlusNode* parent = nullptr;
 
-    // Traverse down to leaf
+    // Traverse down the internal routing nodes to find the target leaf
     while (!cursor->isLeaf) {
         parent = cursor;
         int i = 0;
@@ -54,7 +60,7 @@ void BPlusTree::insert(LogRecord* record) {
         cursor = cursor->ptrs[i];
     }
 
-    // Check if key already exists in leaf
+    // Append record if identical timestamp already exists in leaf
     for (int i = 0; i < cursor->size; i++) {
         if (cursor->keys[i] == key) {
             cursor->dataPtrs[i].push_back(record);
@@ -62,12 +68,13 @@ void BPlusTree::insert(LogRecord* record) {
         }
     }
 
-    // Insert key into leaf
+    // Insert key directly if leaf has available capacity
     if (cursor->size < MAX) {
         int i = 0;
         while (i < cursor->size && key > cursor->keys[i]) {
             i++;
         }
+        // Shift existing keys and pointers right to make space
         for (int j = cursor->size; j > i; j--) {
             cursor->keys[j] = cursor->keys[j - 1];
             cursor->dataPtrs[j] = cursor->dataPtrs[j - 1];
@@ -77,16 +84,18 @@ void BPlusTree::insert(LogRecord* record) {
         cursor->dataPtrs[i].push_back(record);
         cursor->size++;
     } else {
-        // Split leaf
+        // Split saturated leaf node when size reaches MAX
         BPlusNode* newLeaf = new BPlusNode(true);
         std::string virtualKeys[MAX + 1];
         std::vector<LogRecord*> virtualData[MAX + 1];
 
+        // Copy existing leaf entries into temporary buffers
         for (int i = 0; i < MAX; i++) {
             virtualKeys[i] = cursor->keys[i];
             virtualData[i] = cursor->dataPtrs[i];
         }
 
+        // Insert new entry into sorted position in temporary buffers
         int i = 0, j;
         while (i < MAX && key > virtualKeys[i]) {
             i++;
@@ -99,6 +108,7 @@ void BPlusTree::insert(LogRecord* record) {
         virtualData[i].clear();
         virtualData[i].push_back(record);
 
+        // Distribute entries evenly between original leaf and new sibling
         cursor->size = (MAX + 1) / 2;
         newLeaf->size = (MAX + 1) - cursor->size;
 
@@ -111,9 +121,11 @@ void BPlusTree::insert(LogRecord* record) {
             newLeaf->dataPtrs[i] = virtualData[j];
         }
 
+        // Maintain linked list pointers between adjacent leaves
         newLeaf->next = cursor->next;
         cursor->next = newLeaf;
 
+        // Create new internal root if original root was split
         if (cursor == root) {
             BPlusNode* newRoot = new BPlusNode(false);
             newRoot->keys[0] = newLeaf->keys[0];
@@ -122,17 +134,21 @@ void BPlusTree::insert(LogRecord* record) {
             newRoot->size = 1;
             root = newRoot;
         } else {
+            // Push split key up into parent internal node
             insertInternal(newLeaf->keys[0], parent, newLeaf);
         }
     }
 }
 
+// Insert separator key and child pointer into an internal node
 void BPlusTree::insertInternal(const std::string& key, BPlusNode* cursor, BPlusNode* child) {
+    // Insert directly if internal node has capacity
     if (cursor->size < MAX) {
         int i = 0;
         while (i < cursor->size && key > cursor->keys[i]) {
             i++;
         }
+        // Shift keys and pointers right to maintain ordering
         for (int j = cursor->size; j > i; j--) {
             cursor->keys[j] = cursor->keys[j - 1];
             cursor->ptrs[j + 1] = cursor->ptrs[j];
@@ -141,11 +157,12 @@ void BPlusTree::insertInternal(const std::string& key, BPlusNode* cursor, BPlusN
         cursor->ptrs[i + 1] = child;
         cursor->size++;
     } else {
-        // Split internal node
+        // Split saturated internal node
         BPlusNode* newInternal = new BPlusNode(false);
         std::string virtualKeys[MAX + 1];
         BPlusNode* virtualPtrs[MAX + 2];
 
+        // Copy current keys and child pointers to temporary buffers
         for (int i = 0; i < MAX; i++) {
             virtualKeys[i] = cursor->keys[i];
         }
@@ -153,6 +170,7 @@ void BPlusTree::insertInternal(const std::string& key, BPlusNode* cursor, BPlusN
             virtualPtrs[i] = cursor->ptrs[i];
         }
 
+        // Insert new key and child pointer into sorted positions
         int i = 0, j;
         while (i < MAX && key > virtualKeys[i]) {
             i++;
@@ -167,6 +185,7 @@ void BPlusTree::insertInternal(const std::string& key, BPlusNode* cursor, BPlusN
         }
         virtualPtrs[i + 1] = child;
 
+        // Partition keys and child pointers between split internal nodes
         cursor->size = (MAX + 1) / 2;
         newInternal->size = MAX - cursor->size;
 
@@ -177,6 +196,7 @@ void BPlusTree::insertInternal(const std::string& key, BPlusNode* cursor, BPlusN
             newInternal->ptrs[i] = virtualPtrs[j];
         }
 
+        // Create new root if current node was root, otherwise propagate upward
         if (cursor == root) {
             BPlusNode* newRoot = new BPlusNode(false);
             newRoot->keys[0] = virtualKeys[cursor->size];
@@ -190,6 +210,7 @@ void BPlusTree::insertInternal(const std::string& key, BPlusNode* cursor, BPlusN
     }
 }
 
+// Locate parent node of a given child via recursive tree search
 BPlusNode* BPlusTree::findParent(BPlusNode* cursor, BPlusNode* child) {
     if (cursor->isLeaf || cursor->ptrs[0]->isLeaf) {
         return nullptr;
@@ -205,6 +226,7 @@ BPlusNode* BPlusTree::findParent(BPlusNode* cursor, BPlusNode* child) {
     return nullptr;
 }
 
+// Perform range search for logs between start_time and end_time
 std::vector<LogRecord*> BPlusTree::searchRange(const std::string& start_time, const std::string& end_time) {
     std::vector<LogRecord*> result;
     nodesAccessed = 0;
@@ -216,7 +238,7 @@ std::vector<LogRecord*> BPlusTree::searchRange(const std::string& start_time, co
     BPlusNode* cursor = root;
     nodesAccessed++;
 
-    // ── Record root node ────────────────────────────────────
+    // Track root state for search path telemetry
     BPlusTraceNode rootTrace;
     rootTrace.id = "root";
     rootTrace.type = "root";
@@ -225,7 +247,7 @@ std::vector<LogRecord*> BPlusTree::searchRange(const std::string& start_time, co
     }
     rootTrace.chosen_branch = -1;
 
-    // ── Descend to leaf ─────────────────────────────────────
+    // Descend through internal routing nodes to locate start leaf
     int internalIdx = 0;
     std::string prevId = "root";
 
@@ -235,7 +257,7 @@ std::vector<LogRecord*> BPlusTree::searchRange(const std::string& start_time, co
             i++;
         }
 
-        // Record chosen branch on the current (parent) node
+        // Store selected branch on parent node trace
         if (prevId == "root") {
             rootTrace.chosen_branch = i;
         }
@@ -244,7 +266,7 @@ std::vector<LogRecord*> BPlusTree::searchRange(const std::string& start_time, co
         nodesAccessed++;
 
         if (!cursor->isLeaf) {
-            // Internal node
+            // Track intermediate internal node visit
             std::string nodeId = "internal-" + std::to_string(internalIdx);
             BPlusTraceNode internalTrace;
             internalTrace.id = nodeId;
@@ -253,7 +275,7 @@ std::vector<LogRecord*> BPlusTree::searchRange(const std::string& start_time, co
                 internalTrace.keys.push_back(cursor->keys[k]);
             }
 
-            // Determine which branch we'll take next
+            // Determine next child pointer to follow
             int nextI = 0;
             while (nextI < cursor->size && start_time >= cursor->keys[nextI]) {
                 nextI++;
@@ -268,10 +290,10 @@ std::vector<LogRecord*> BPlusTree::searchRange(const std::string& start_time, co
         }
     }
 
-    // Push root trace now that chosen_branch is set
+    // Add root entry to the traversal trace list
     traversalPath.nodes.insert(traversalPath.nodes.begin(), rootTrace);
 
-    // ── Record first leaf & traverse linked list ────────────
+    // Sequentially scan leaf linked list across the query range
     int leafIdx = 0;
     while (cursor != nullptr) {
         nodesAccessed++;
@@ -283,12 +305,15 @@ std::vector<LogRecord*> BPlusTree::searchRange(const std::string& start_time, co
         leafTrace.chosen_branch = -1;
 
         bool done = false;
+        // Check keys in current leaf against query bounds
         for (int i = 0; i < cursor->size; i++) {
             leafTrace.keys.push_back(cursor->keys[i]);
+            // Terminate search early once keys exceed end timestamp
             if (cursor->keys[i] > end_time) {
                 done = true;
                 break;
             }
+            // Collect matching log records within the time interval
             if (cursor->keys[i] >= start_time) {
                 leafTrace.matched_keys.push_back(cursor->keys[i]);
                 for (LogRecord* rec : cursor->dataPtrs[i]) {
@@ -297,7 +322,7 @@ std::vector<LogRecord*> BPlusTree::searchRange(const std::string& start_time, co
             }
         }
 
-        // Edge from parent to this leaf
+        // Record traversal edges between parent and leaves or across leaves
         if (leafIdx == 0) {
             traversalPath.edges.push_back({prevId, leafId, "match start"});
         } else {
@@ -307,6 +332,7 @@ std::vector<LogRecord*> BPlusTree::searchRange(const std::string& start_time, co
         traversalPath.nodes.push_back(leafTrace);
 
         if (done) break;
+        // Advance to next leaf node via leaf chaining pointer
         cursor = cursor->next;
         leafIdx++;
     }
@@ -314,10 +340,12 @@ std::vector<LogRecord*> BPlusTree::searchRange(const std::string& start_time, co
     return result;
 }
 
+// Return number of tree nodes visited during the last query
 int BPlusTree::getNodesAccessed() const {
     return nodesAccessed;
 }
 
+// Return structured traversal path for frontend rendering
 const BPlusTraversalPath& BPlusTree::getTraversalPath() const {
     return traversalPath;
 }

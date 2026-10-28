@@ -1,0 +1,10 @@
+{
+	"folders": [
+		{
+			"path": "../../../scl-package"
+		}
+	],
+	"settings": {
+		"typescript.tsdk": "frontend/node_modules/typescript/lib"
+	}
+}
